@@ -69,14 +69,167 @@
     <!-- Your React App Component -->
     <!-- Use type="text/babel" to allow Babel to transpile JSX -->
     <script type="text/babel">
-        // Define the App component directly within this script
+        // Document Type Shortening Rules
+        const documentTypeMapping = {
+            "Life Limited Parts Status": "LLP",
+            "Folio 12": "FOLIO12",
+            "Movement Traceability Sheet": "MTS",
+            "Airbus Aircraft Inspection Report": "AIR",
+            "Boeing Aircraft Readiness Log": "ARL",
+            "Boeing Aircraft Readiness Log Cover Page": "ARL COVER PAGE",
+            "Engine Data Submittal": "EDS",
+            "MTS LLP Hybrid": "MTS HYBRID",
+            "Disk Sheet": "DISK SHEET",
+            "Non-Incident Statement": "NIS",
+            "Airworthiness Certificate": "AWD",
+            "Industry Item List": "P&W Industry Item List",
+        };
+
+        // Function to extract specific table data based on column headers
+        const extractSpecificTableData = (data) => {
+            const lines = data.lines;
+            if (!lines || lines.length === 0) {
+                return [];
+            }
+
+            let headerLineIndex = -1;
+            const headerKeywords = {
+                'batch id': null,
+                'name': null, // Alternative for Batch ID
+                'total pages': null,
+                'document type': null
+            };
+
+            // 1. Find the header line and approximate column positions
+            for (let i = 0; i < lines.length; i++) {
+                const lineText = lines[i].text.toLowerCase();
+                // Check if the line contains key indicators for a header
+                if (
+                    (lineText.includes('batch id') || lineText.includes('name')) &&
+                    lineText.includes('total pages') &&
+                    lineText.includes('document type')
+                ) {
+                    headerLineIndex = i;
+                    // Refine headerKeywords positions based on actual word positions in the detected header line
+                    lines[i].words.forEach(word => {
+                        const lowerWord = word.text.toLowerCase();
+                        if (lowerWord.includes('batch') && lowerWord.includes('id')) headerKeywords['batch id'] = word.bbox.x0;
+                        if (lowerWord.includes('name')) headerKeywords['name'] = word.bbox.x0;
+                        if (lowerWord.includes('total') && lowerWord.includes('pages')) headerKeywords['total pages'] = word.bbox.x0;
+                        if (lowerWord.includes('document') && lowerWord.includes('type')) headerKeywords['document type'] = word.bbox.x0;
+                    });
+                    break; // Found the header
+                }
+            }
+
+            if (headerLineIndex === -1) {
+                console.warn("Could not find a clear header line with 'Batch ID/Name', 'Total Pages', and 'Document Type'. Attempting general line-by-line parsing for best effort.");
+                // Fallback: If no clear header, try to extract based on general line structure
+                // This is a very basic fallback and might not yield accurate results for tables.
+                return lines.map(line => {
+                    const cells = line.text.split(/\s{2,}/); // Split by 2 or more spaces for basic column separation
+                    let batchId = cells[0] || '';
+                    let totalPages = cells[1] || '';
+                    let documentType = cells[2] || '';
+
+                    // Apply shortening if any cell looks like a document type
+                    const matchedKey = Object.keys(documentTypeMapping).find(key => documentType.includes(key));
+                    const shortDocumentType = matchedKey ? documentTypeMapping[matchedKey] : documentType;
+
+                    return {
+                        batchId: batchId,
+                        shortDocumentType: shortDocumentType,
+                        totalPages: totalPages
+                    };
+                }).filter(row => row.batchId || row.shortDocumentType || row.totalPages); // Filter out completely empty rows
+            }
+
+            const results = [];
+            const columnXCoords = {
+                batchId: headerKeywords['batch id'] || headerKeywords['name'], // Prioritize 'batch id' then 'name'
+                totalPages: headerKeywords['total pages'],
+                documentType: headerKeywords['document type']
+            };
+
+            // Filter out null coordinates and sort by x-position to define column order
+            const sortedColumnKeys = Object.keys(columnXCoords)
+                .filter(key => columnXCoords[key] !== null)
+                .sort((a, b) => columnXCoords[a] - columnXCoords[b]);
+
+            // 2. Iterate through lines *after* the header to extract data
+            for (let i = headerLineIndex + 1; i < lines.length; i++) {
+                const line = lines[i];
+                const rowData = {
+                    batchId: '',
+                    shortDocumentType: '',
+                    totalPages: ''
+                };
+
+                // Group words by their approximate column
+                const cellsContent = {}; // Stores words grouped by their assigned column key
+                line.words.forEach(word => {
+                    let assignedColumnKey = null;
+                    let minDistance = Infinity;
+
+                    // Find the closest column header's x-coordinate for the word's x0
+                    for (const colKey of sortedColumnKeys) {
+                        const colX = columnXCoords[colKey];
+                        if (colX !== null) {
+                            const distance = Math.abs(word.bbox.x0 - colX);
+                            // A tolerance is crucial for misalignment
+                            if (distance < minDistance && distance < 70) { // Increased tolerance for potentially wider columns/misalignment
+                                minDistance = distance;
+                                assignedColumnKey = colKey;
+                            }
+                        }
+                    }
+
+                    if (assignedColumnKey) {
+                        if (!cellsContent[assignedColumnKey]) {
+                            cellsContent[assignedColumnKey] = [];
+                        }
+                        cellsContent[assignedColumnKey].push(word);
+                    }
+                });
+
+                // Reconstruct cell text from grouped words and apply rules
+                if (cellsContent.batchId) {
+                    rowData.batchId = cellsContent.batchId.map(w => w.text).join(' ').trim();
+                } else if (cellsContent.name) { // Use 'name' if 'batchId' wasn't explicitly found but 'name' column was
+                    rowData.batchId = cellsContent.name.map(w => w.text).join(' ').trim();
+                }
+
+
+                if (cellsContent.totalPages) {
+                    rowData.totalPages = cellsContent.totalPages.map(w => w.text).join(' ').trim();
+                }
+
+                if (cellsContent.documentType) {
+                    let docTypeRaw = cellsContent.documentType.map(w => w.text).join(' ').trim();
+                    // Apply shortening rules
+                    const matchedKey = Object.keys(documentTypeMapping).find(key => docTypeRaw.includes(key));
+                    rowData.shortDocumentType = matchedKey ? documentTypeMapping[matchedKey] : docTypeRaw;
+                }
+
+                // Only add row if it contains at least some data in the target columns
+                if (rowData.batchId || rowData.shortDocumentType || rowData.totalPages) {
+                    results.push(rowData);
+                }
+            }
+
+            return results;
+        };
+
+
+        // Main App Component
         const App = () => {
-            const [ocrText, setOcrText] = React.useState('');
-            const [tableData, setTableData] = React.useState([]);
+            const [ocrText, setOcrText] = React.useState(''); // Still capture raw text internally for debugging if needed
+            const [tableData, setTableData] = React.useState([]); // This will store the parsed specific table data
             const [loading, setLoading] = React.useState(false);
             const [message, setMessage] = React.useState('');
             const [showMessageBox, setShowMessageBox] = React.useState(false);
             const fileInputRef = React.useRef(null);
+            const workerRef = React.useRef(null); // Ref to store the Tesseract worker instance
 
             const showMessage = (msg) => {
                 setMessage(msg);
@@ -88,86 +241,41 @@
                 setMessage('');
             };
 
-            const parseTableFromOCR = (data) => {
-                const words = data.words;
-                if (!words || words.length === 0) {
-                    return [];
-                }
-
-                words.sort((a, b) => {
-                    if (Math.abs(a.bbox.y0 - b.bbox.y0) < 10) {
-                        return a.bbox.x0 - b.bbox.x0;
+            // Initialize Tesseract worker once on component mount
+            React.useEffect(() => {
+                const initializeTesseractWorker = async () => {
+                    if (!workerRef.current && window.Tesseract) {
+                        try {
+                            const worker = await window.Tesseract.createWorker('eng', 1, {
+                                // Explicitly set workerPath to ensure it loads from unpkg
+                                workerPath: 'https://unpkg.com/tesseract.js@5.0.0/dist/worker.min.js',
+                                // langPath is often inferred if workerPath is correct,
+                                // but if issues persist, explicitly set it:
+                                // langPath: 'https://unpkg.com/tesseract.js@5.0.0/lang-data/',
+                                logger: m => { /* console.log(m); */ }
+                            });
+                            workerRef.current = worker;
+                            console.log('Tesseract worker initialized successfully.');
+                        } catch (error) {
+                            console.error('Failed to initialize Tesseract worker:', error);
+                            showMessage('Failed to initialize OCR engine. Please try again or check your network connection.');
+                        }
                     }
-                    return a.bbox.y0 - b.bbox.y0;
-                });
+                };
 
-                const rows = [];
-                let currentRow = [];
-                let currentY = -1;
-                const yTolerance = 15;
+                initializeTesseractWorker();
 
-                words.forEach(word => {
-                    if (currentY === -1 || Math.abs(word.bbox.y0 - currentY) > yTolerance) {
-                        if (currentRow.length > 0) {
-                            rows.push(currentRow);
-                        }
-                        currentRow = [word];
-                        currentY = word.bbox.y0;
-                    } else {
-                        currentRow.push(word);
+                // Cleanup worker on component unmount
+                return () => {
+                    if (workerRef.current) {
+                        console.log('Terminating Tesseract worker.');
+                        workerRef.current.terminate();
+                        workerRef.current = null;
                     }
-                });
-                if (currentRow.length > 0) {
-                    rows.push(currentRow);
-                }
+                };
+            }, []); // Empty dependency array ensures this runs once on mount and cleans up on unmount
 
-                const columnXPositions = new Set();
-                rows.forEach(row => {
-                    let lastX1 = 0;
-                    row.forEach(word => {
-                        if (word.bbox.x0 - lastX1 > 30) {
-                            columnXPositions.add(word.bbox.x0);
-                        }
-                        lastX1 = word.bbox.x1;
-                    });
-                });
-
-                const sortedColumnXPositions = Array.from(columnXPositions).sort((a, b) => a - b);
-
-                if (sortedColumnXPositions.length === 0 && rows.length > 0) {
-                    return rows.map(row => [row.map(word => word.text).join(' ')]);
-                }
-
-                const table = [];
-                rows.forEach(row => {
-                    const rowCells = Array(sortedColumnXPositions.length + 1).fill('');
-                    let currentColumnIndex = 0;
-
-                    row.forEach(word => {
-                        let assignedColumn = -1;
-                        for (let i = 0; i < sortedColumnXPositions.length; i++) {
-                            if (word.bbox.x0 >= sortedColumnXPositions[i] - 10) {
-                                assignedColumn = i + 1;
-                            }
-                        }
-
-                        if (assignedColumn === -1) {
-                            assignedColumn = 0;
-                        }
-
-                        if (rowCells[assignedColumn]) {
-                            rowCells[assignedColumn] += ' ' + word.text;
-                        } else {
-                            rowCells[assignedColumn] = word.text;
-                        }
-                    });
-                    table.push(rowCells.map(cell => cell.trim()));
-                });
-
-                const cleanedTable = table.filter(row => row.some(cell => cell.length > 0));
-                return cleanedTable;
-            };
-
+            // Handle file upload and OCR processing
             const handleFileChange = async (event) => {
                 const file = event.target.files[0];
                 if (!file) {
@@ -175,33 +283,31 @@
                 }
 
                 setLoading(true);
-                setOcrText('');
+                setOcrText(''); // Clear raw OCR text
                 setTableData([]);
                 setShowMessageBox(false);
 
-                if (typeof window.Tesseract === 'undefined') {
-                    showMessage('Tesseract.js is not loaded. Please ensure the Tesseract.js CDN script is included in your HTML.');
+                // Check if worker is ready
+                if (!workerRef.current) {
+                    showMessage('OCR engine is still loading or failed to initialize. Please wait a moment or refresh the page.');
                     setLoading(false);
                     return;
                 }
 
                 try {
-                    const { data } = await window.Tesseract.recognize(
-                        file,
-                        'eng',
-                        { logger: m => {} } // Simplified logger
-                    );
+                    // Use the pre-initialized worker for recognition
+                    const { data } = await workerRef.current.recognize(file);
 
-                    setOcrText(data.text);
-                    const parsedTable = parseTableFromOCR(data);
-                    setTableData(parsedTable);
+                    setOcrText(data.text); // Still capture raw text internally for debugging if needed, but not display
+                    const extractedSpecificTable = extractSpecificTableData(data);
+                    setTableData(extractedSpecificTable);
 
-                    if (parsedTable.length === 0) {
-                        showMessage('No table data could be extracted. Please ensure the image/PDF contains clear tabular data.');
+                    if (extractedSpecificTable.length === 0) {
+                        showMessage('No specific table data (Batch ID, Total Pages, Document Type) could be extracted. Please ensure the image/PDF contains clear tabular data with these headers.');
                     }
 
                 } catch (error) {
-                    console.error('OCR Error:', error);
+                    console.error('OCR Recognition Error:', error);
                     showMessage('An error occurred during OCR processing. Please try again.');
                     setOcrText('Error: Could not process the file.');
                     setTableData([]);
@@ -210,22 +316,30 @@
                 }
             };
 
+            // Function to download table data as CSV
             const downloadCsv = () => {
                 if (tableData.length === 0) {
                     showMessage('No data to download.');
                     return;
                 }
 
-                const csvContent = tableData.map(row =>
-                    row.map(cell => `"${cell.replace(/"/g, '""')}"`).join(',')
+                // Create CSV header
+                const csvHeader = ["Batch ID", "Short Document Type", "Total Pages"].join(',');
+                // Map data to CSV rows
+                const csvRows = tableData.map(row =>
+                    `"${row.batchId.replace(/"/g, '""')}",` +
+                    `"${row.shortDocumentType.replace(/"/g, '""')}",` +
+                    `"${row.totalPages.replace(/"/g, '""')}"`
                 ).join('\n');
+
+                const csvContent = csvHeader + '\n' + csvRows;
 
                 const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
                 const link = document.createElement('a');
                 if (link.download !== undefined) {
                     const url = URL.createObjectURL(blob);
                     link.setAttribute('href', url);
-                    link.setAttribute('download', 'extracted_table.csv');
+                    link.setAttribute('download', 'extracted_table_data.csv');
                     link.style.visibility = 'hidden';
                     document.body.appendChild(link);
                     link.click();
@@ -242,6 +356,7 @@
                             <span className="text-indigo-600">Table</span> OCR Extractor
                         </h1>
 
+                        {/* File Upload Section */}
                         <div className="mb-8">
                             <label htmlFor="fileInput" className="block text-lg font-medium text-gray-700 mb-3">
                                 Upload an Image or PDF (containing tables):
@@ -255,8 +370,12 @@
                                 className="custom-file-input w-full"
                             />
                             <p className="text-sm text-gray-500 mt-2 text-center">Supported formats: JPG, PNG, GIF, BMP, PDF</p>
+                            <p className="text-sm text-gray-500 mt-1 text-center font-semibold text-indigo-700">
+                                Optimized for tables with 'Batch ID/Name', 'Total Pages', and 'Document Type' columns.
+                            </p>
                         </div>
 
+                        {/* Loading Indicator */}
                         {loading && (
                             <div className="flex items-center justify-center space-x-3 py-6">
                                 <div className="animate-spin rounded-full h-10 w-10 border-b-2 border-indigo-500"></div>
@@ -264,27 +383,24 @@
                             </div>
                         )}
 
+                        {/* Extracted Table Display */}
                         {!loading && tableData.length > 0 && (
                             <div className="mb-8 p-4 border border-gray-300 rounded-lg bg-gray-50 overflow-auto max-h-96">
                                 <h2 className="text-2xl font-semibold text-gray-700 mb-4">Extracted Table:</h2>
                                 <table className="min-w-full divide-y divide-gray-200 border border-gray-200 rounded-lg">
                                     <thead className="bg-gray-200">
                                         <tr>
-                                            {tableData[0] && tableData[0].map((header, index) => (
-                                                <th key={index} className="px-6 py-3 text-left text-xs font-medium text-gray-600 uppercase tracking-wider">
-                                                    {header}
-                                                </th>
-                                            ))}
+                                            <th className="px-6 py-3 text-left text-xs font-medium text-gray-600 uppercase tracking-wider">Batch ID</th>
+                                            <th className="px-6 py-3 text-left text-xs font-medium text-gray-600 uppercase tracking-wider">Short Document Type</th>
+                                            <th className="px-6 py-3 text-left text-xs font-medium text-gray-600 uppercase tracking-wider">Total Pages</th>
                                         </tr>
                                     </thead>
                                     <tbody className="bg-white divide-y divide-gray-200">
-                                        {tableData.slice(1).map((row, rowIndex) => (
+                                        {tableData.map((row, rowIndex) => (
                                             <tr key={rowIndex} className="hover:bg-gray-50">
-                                                {row.map((cell, cellIndex) => (
-                                                    <td key={cellIndex} className="px-6 py-4 whitespace-nowrap text-sm text-gray-800">
-                                                        {cell}
-                                                    </td>
-                                                ))}
+                                                <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-800">{row.batchId}</td>
+                                                <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-800">{row.shortDocumentType}</td>
+                                                <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-800">{row.totalPages}</td>
                                             </tr>
                                         ))}
                                     </tbody>
@@ -292,6 +408,7 @@
                             </div>
                         )}
 
+                        {/* Download Button */}
                         {!loading && tableData.length > 0 && (
                             <div className="flex justify-center mb-6">
                                 <button
@@ -303,22 +420,7 @@
                             </div>
                         )}
 
-                        {!loading && ocrText && (
-                            <div className="mb-6">
-                                <label htmlFor="ocrRawOutput" className="block text-lg font-medium text-gray-700 mb-3">
-                                    Raw OCR Text (for reference):
-                                </label>
-                                <textarea
-                                    id="ocrRawOutput"
-                                    rows="8"
-                                    className="w-full p-4 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-transparent outline-none bg-gray-50 text-gray-800"
-                                    value={ocrText}
-                                    readOnly
-                                    placeholder="Raw OCR text will appear here..."
-                                ></textarea>
-                            </div>
-                        )}
-
+                        {/* Message Box for Alerts */}
                         {showMessageBox && (
                             <div className="fixed inset-0 bg-gray-800 bg-opacity-75 flex items-center justify-center z-50">
                                 <div className="bg-white p-6 rounded-lg shadow-xl max-w-sm w-full text-center">
