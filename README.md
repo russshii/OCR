@@ -3,445 +3,586 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>OCR Table Extractor</title>
+    <title>Modern OCR Web App</title>
     <!-- Tailwind CSS CDN -->
     <script src="https://cdn.tailwindcss.com"></script>
-    <!-- Inter Font -->
-    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
     <style>
+        /* Custom styles for the Inter font and overall look */
         body {
             font-family: 'Inter', sans-serif;
-            background-color: #f0f2f5;
+            background-color: #f0f2f5; /* Light gray background */
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            min-height: 100vh;
+            margin: 0;
+            padding: 20px;
+            box-sizing: border-box;
         }
-        /* Custom styling for file input to make it look better */
-        .custom-file-input::-webkit-file-upload-button {
-            visibility: hidden;
+        .container {
+            background-color: #ffffff;
+            border-radius: 16px; /* More rounded corners */
+            box-shadow: 0 10px 25px rgba(0, 0, 0, 0.1); /* Softer shadow */
+            padding: 30px;
+            width: 100%;
+            max-width: 900px; /* Increased max width for better table display */
+            display: flex;
+            flex-direction: column;
+            gap: 25px;
         }
-        .custom-file-input::before {
-            content: 'Select File';
-            display: inline-block;
-            background: linear-gradient(to right, #4F46E5, #6366F1);
-            color: white;
-            border: none;
-            border-radius: 0.5rem;
-            padding: 0.75rem 1.5rem;
-            cursor: pointer;
-            font-weight: 600;
-            transition: background-color 0.3s ease;
-            box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+        .input-group {
+            display: flex;
+            flex-direction: column;
+            gap: 15px;
         }
-        .custom-file-input:hover::before {
-            background: linear-gradient(to right, #6366F1, #4F46E5);
-        }
-        .custom-file-input:active::before {
-            background: linear-gradient(to right, #4338CA, #4F46E5);
-            transform: translateY(1px);
-        }
-        .custom-file-input {
-            border: 2px dashed #9CA3AF;
-            border-radius: 0.5rem;
-            padding: 1.5rem;
+        .file-input-wrapper {
+            border: 2px dashed #cbd5e1; /* Dashed border for file input */
+            border-radius: 12px;
+            padding: 20px;
             text-align: center;
             cursor: pointer;
             transition: border-color 0.3s ease;
         }
-        .custom-file-input:hover {
-            border-color: #6366F1;
+        .file-input-wrapper:hover {
+            border-color: #93c5fd; /* Light blue on hover */
         }
-        textarea {
-            resize: vertical; /* Allow vertical resizing */
+        .file-input-wrapper input[type="file"] {
+            display: none;
+        }
+        .file-input-wrapper label {
+            display: block;
+            cursor: pointer;
+            color: #4a5568; /* Darker text */
+            font-weight: 500;
+        }
+        .file-input-wrapper img {
+            max-width: 100%;
+            max-height: 200px;
+            border-radius: 8px;
+            margin-top: 15px;
+            display: none; /* Hidden by default */
+        }
+        .button-primary {
+            background-image: linear-gradient(to right, #6366f1, #8b5cf6); /* Gradient button */
+            color: white;
+            padding: 12px 25px;
+            border-radius: 12px;
+            font-weight: 600;
+            transition: transform 0.2s ease, box-shadow 0.2s ease;
+            box-shadow: 0 5px 15px rgba(99, 102, 241, 0.3);
+        }
+        .button-primary:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 8px 20px rgba(99, 102, 241, 0.4);
+        }
+        .button-secondary {
+            background-color: #e2e8f0; /* Light gray */
+            color: #4a5568;
+            padding: 12px 25px;
+            border-radius: 12px;
+            font-weight: 600;
+            transition: background-color 0.2s ease, transform 0.2s ease;
+        }
+        .button-secondary:hover {
+            background-color: #cbd5e1;
+            transform: translateY(-1px);
+        }
+        .loading-spinner {
+            border: 4px solid rgba(255, 255, 255, 0.3);
+            border-top: 4px solid #ffffff;
+            border-radius: 50%;
+            width: 24px;
+            height: 24px;
+            animation: spin 1s linear infinite;
+            display: inline-block;
+            vertical-align: middle;
+            margin-right: 8px;
+        }
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+        .result-area {
+            background-color: #f7fafc; /* Lighter background for result */
+            border: 1px solid #e2e8f0;
+            border-radius: 12px;
+            padding: 20px;
+            min-height: 150px;
+            color: #2d3748; /* Darker text */
+            font-size: 0.95rem;
+            line-height: 1.6;
+            overflow-x: auto; /* Allow horizontal scroll for tables */
+            max-height: 400px; /* Limit height of result area */
+        }
+        .result-area table {
+            width: 100%;
+            border-collapse: collapse;
+            margin-top: 10px;
+            border-radius: 8px; /* Rounded corners for table */
+            overflow: hidden; /* Ensures rounded corners apply to content */
+        }
+        .result-area th, .result-area td {
+            border: 1px solid #e2e8f0;
+            padding: 10px 15px; /* Increased padding */
+            text-align: left;
+        }
+        .result-area th {
+            background-color: #edf2f7;
+            font-weight: 600;
+            color: #4a5568;
+            position: sticky; /* Make header sticky for scrolling */
+            top: 0;
+            z-index: 1;
+        }
+        .result-area tr:nth-child(even) {
+            background-color: #f7fafc;
+        }
+        .result-area tr:hover {
+            background-color: #e6f0ff; /* Light blue on row hover */
+        }
+        .message-box {
+            background-color: #fff;
+            border-radius: 8px;
+            box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+            padding: 20px;
+            max-width: 400px;
+            text-align: center;
+            position: fixed;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            z-index: 1000;
+            display: none; /* Hidden by default */
+            animation: fadeIn 0.3s ease-out;
+        }
+        .message-box.show {
+            display: block;
+        }
+        .message-box h3 {
+            font-size: 1.25rem;
+            font-weight: 600;
+            margin-bottom: 10px;
+            color: #333;
+        }
+        .message-box p {
+            font-size: 1rem;
+            color: #555;
+            margin-bottom: 20px;
+        }
+        .message-box button {
+            background-color: #6366f1;
+            color: white;
+            padding: 10px 20px;
+            border-radius: 8px;
+            font-weight: 500;
+            cursor: pointer;
+            transition: background-color 0.2s ease;
+        }
+        .message-box button:hover {
+            background-color: #4f46e5;
+        }
+        @keyframes fadeIn {
+            from { opacity: 0; transform: translate(-50%, -60%); }
+            to { opacity: 1; transform: translate(-50%, -50%); }
+        }
+
+        /* Responsive adjustments */
+        @media (max-width: 768px) {
+            .container {
+                padding: 20px;
+                margin: 10px;
+                max-width: 100%; /* Allow full width on smaller screens */
+            }
+            .button-primary, .button-secondary {
+                padding: 10px 20px;
+                font-size: 0.9rem;
+            }
+            .result-area {
+                font-size: 0.85rem;
+                padding: 15px;
+            }
+            .result-area th, .result-area td {
+                padding: 8px 10px;
+            }
         }
     </style>
 </head>
 <body>
-    <div id="root"></div>
+    <div class="container">
+        <h1 class="text-3xl font-bold text-center text-gray-800 mb-4">Image to Table Data Extractor</h1>
 
-    <!-- React CDN -->
-    <script crossorigin src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
-    <script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+        <div class="input-group">
+            <div class="file-input-wrapper" id="fileInputWrapper">
+                <input type="file" id="imageInput" accept="image/*">
+                <label for="imageInput" class="flex flex-col items-center justify-center">
+                    <svg class="w-12 h-12 text-gray-400 mb-2" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12"></path>
+                    </svg>
+                    <span class="text-lg font-semibold">Drag & Drop your image here or Click to Upload</span>
+                    <span class="text-sm text-gray-500 mt-1">Or paste an image from clipboard (Ctrl+V / Cmd+V)</span>
+                </label>
+                <img id="imagePreview" src="#" alt="Image Preview" class="mt-4 hidden">
+            </div>
+            <button id="ocrButton" class="button-primary w-full flex items-center justify-center" disabled>
+                Perform OCR
+            </button>
+        </div>
 
-    <!-- Babel Standalone for JSX transformation in browser -->
-    <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+        <div class="output-group">
+            <h2 class="text-xl font-semibold text-gray-700 mb-3">Extracted Data:</h2>
+            <div id="ocrResult" class="result-area">
+                Upload an image or paste from clipboard and click 'Perform OCR' to see the extracted data in a table.
+            </div>
+            <div id="actionButtons" class="flex flex-wrap justify-center gap-4 mt-4 hidden">
+                <button id="downloadCsvButton" class="button-secondary flex-1">Download CSV</button>
+                <button id="copyTableButton" class="button-secondary flex-1">Copy Table Data</button>
+            </div>
+        </div>
+    </div>
 
-    <!-- Tesseract.js CDN -->
-    <script src='https://unpkg.com/tesseract.js@5.0.0/dist/tesseract.min.js'></script>
+    <!-- Message Box for alerts -->
+    <div id="messageBox" class="message-box">
+        <h3 id="messageBoxTitle"></h3>
+        <p id="messageBoxContent"></p>
+        <button id="messageBoxClose">OK</button>
+    </div>
 
-    <!-- Your React App Component -->
-    <!-- Use type="text/babel" to allow Babel to transpile JSX -->
-    <script type="text/babel">
-        // Document Type Shortening Rules
-        const documentTypeMapping = {
-            "Life Limited Parts Status": "LLP",
-            "Folio 12": "FOLIO12",
-            "Movement Traceability Sheet": "MTS",
-            "Airbus Aircraft Inspection Report": "AIR",
-            "Boeing Aircraft Readiness Log": "ARL",
-            "Boeing Aircraft Readiness Log Cover Page": "ARL COVER PAGE",
-            "Engine Data Submittal": "EDS",
-            "MTS LLP Hybrid": "MTS HYBRID",
-            "Disk Sheet": "DISK SHEET",
-            "Non-Incident Statement": "NIS",
-            "Airworthiness Certificate": "AWD",
-            "Industry Item List": "P&W Industry Item List",
-        };
+    <script type="module">
+        // Get references to DOM elements
+        const imageInput = document.getElementById('imageInput');
+        const imagePreview = document.getElementById('imagePreview');
+        const ocrButton = document.getElementById('ocrButton');
+        const ocrResult = document.getElementById('ocrResult');
+        const fileInputWrapper = document.getElementById('fileInputWrapper');
+        const messageBox = document.getElementById('messageBox');
+        const messageBoxTitle = document.getElementById('messageBoxTitle');
+        const messageBoxContent = document.getElementById('messageBoxContent');
+        const messageBoxClose = document.getElementById('messageBoxClose');
+        const actionButtons = document.getElementById('actionButtons');
+        const downloadCsvButton = document.getElementById('downloadCsvButton');
+        const copyTableButton = document.getElementById('copyTableButton');
 
-        // Function to extract specific table data based on column headers
-        const extractSpecificTableData = (data) => {
-            const lines = data.lines;
-            if (!lines || lines.length === 0) {
-                return [];
+        let base64Image = ''; // To store the base64 encoded image
+        let extractedTableData = []; // To store the parsed data for CSV/Copy
+
+        // Function to show custom message box
+        function showMessageBox(title, message) {
+            messageBoxTitle.textContent = title;
+            messageBoxContent.textContent = message;
+            messageBox.classList.add('show');
+        }
+
+        // Function to hide custom message box
+        messageBoxClose.addEventListener('click', () => {
+            messageBox.classList.remove('show');
+        });
+
+        /**
+         * Processes an image file (from input or paste) and updates the UI.
+         * @param {File} file The image file to process.
+         */
+        function processImageFile(file) {
+            if (!file || !file.type.startsWith('image/')) {
+                showMessageBox('Invalid File Type', 'Please upload or paste an image file (PNG, JPG, JPEG).');
+                imagePreview.classList.add('hidden');
+                ocrButton.disabled = true;
+                ocrResult.innerHTML = 'Upload an image or paste from clipboard and click \'Perform OCR\' to see the extracted data.';
+                actionButtons.classList.add('hidden');
+                return;
             }
 
-            let headerLineIndex = -1;
-            const headerKeywords = {
-                'batch id': null,
-                'name': null, // Alternative for Batch ID
-                'total pages': null,
-                'document type': null
+            const reader = new FileReader();
+            reader.onload = (e) => {
+                imagePreview.src = e.target.result;
+                imagePreview.classList.remove('hidden');
+                base64Image = e.target.result.split(',')[1]; // Extract base64 part
+                ocrButton.disabled = false; // Enable OCR button once image is loaded
+                ocrResult.innerHTML = 'Image loaded. Click \'Perform OCR\' to extract data.';
+                actionButtons.classList.add('hidden'); // Hide action buttons until new data is extracted
             };
+            reader.readAsDataURL(file); // Read file as Data URL (base64)
+        }
 
-            // 1. Find the header line and approximate column positions
-            for (let i = 0; i < lines.length; i++) {
-                const lineText = lines[i].text.toLowerCase();
-                // Check if the line contains key indicators for a header
-                if (
-                    (lineText.includes('batch id') || lineText.includes('name')) &&
-                    lineText.includes('total pages') &&
-                    lineText.includes('document type')
-                ) {
-                    headerLineIndex = i;
-                    // Refine headerKeywords positions based on actual word positions in the detected header line
-                    lines[i].words.forEach(word => {
-                        const lowerWord = word.text.toLowerCase();
-                        if (lowerWord.includes('batch') && lowerWord.includes('id')) headerKeywords['batch id'] = word.bbox.x0;
-                        if (lowerWord.includes('name')) headerKeywords['name'] = word.bbox.x0;
-                        if (lowerWord.includes('total') && lowerWord.includes('pages')) headerKeywords['total pages'] = word.bbox.x0;
-                        if (lowerWord.includes('document') && lowerWord.includes('type')) headerKeywords['document type'] = word.bbox.x0;
-                    });
-                    break; // Found the header
+        // Event listener for image input change (from file selection)
+        imageInput.addEventListener('change', (event) => {
+            const file = event.target.files[0];
+            processImageFile(file);
+        });
+
+        // Drag and drop functionality
+        fileInputWrapper.addEventListener('dragover', (event) => {
+            event.preventDefault();
+            fileInputWrapper.classList.add('border-blue-500');
+        });
+
+        fileInputWrapper.addEventListener('dragleave', (event) => {
+            event.preventDefault();
+            fileInputWrapper.classList.remove('border-blue-500');
+        });
+
+        fileInputWrapper.addEventListener('drop', (event) => {
+            event.preventDefault();
+            fileInputWrapper.classList.remove('border-blue-500');
+            const files = event.dataTransfer.files;
+            if (files.length > 0) {
+                processImageFile(files[0]); // Process the first dropped file
+            }
+        });
+
+        // Paste functionality (for images from clipboard)
+        document.addEventListener('paste', (event) => {
+            const items = event.clipboardData.items;
+            for (let i = 0; i < items.length; i++) {
+                if (items[i].type.indexOf('image') !== -1) {
+                    const file = items[i].getAsFile();
+                    if (file) {
+                        processImageFile(file);
+                        showMessageBox('Image Pasted', 'Image successfully pasted from clipboard.');
+                        event.preventDefault(); // Prevent default paste behavior
+                        return;
+                    }
                 }
             }
+        });
 
-            if (headerLineIndex === -1) {
-                console.warn("Could not find a clear header line with 'Batch ID/Name', 'Total Pages', and 'Document Type'. Attempting general line-by-line parsing for best effort.");
-                // Fallback: If no clear header, try to extract based on general line structure
-                // This is a very basic fallback and might not yield accurate results for tables.
-                return lines.map(line => {
-                    const cells = line.text.split(/\s{2,}/); // Split by 2 or more spaces for basic column separation
-                    let batchId = cells[0] || '';
-                    let totalPages = cells[1] || '';
-                    let documentType = cells[2] || '';
 
-                    // Apply shortening if any cell looks like a document type
-                    const matchedKey = Object.keys(documentTypeMapping).find(key => documentType.includes(key));
-                    const shortDocumentType = matchedKey ? documentTypeMapping[matchedKey] : documentType;
+        /**
+         * Filters out duplicate rows based on a specified key (e.g., "Batch ID").
+         * Keeps the first occurrence of each unique key.
+         * @param {Array<Object>} data The array of objects to filter.
+         * @param {string} key The key to check for duplicates.
+         * @returns {Array<Object>} A new array with unique entries.
+         */
+        function filterUniqueByKey(data, key) {
+            const seen = new Set();
+            return data.filter(item => {
+                const value = item[key];
+                if (seen.has(value)) {
+                    return false;
+                }
+                seen.add(value);
+                return true;
+            });
+        }
 
-                    return {
-                        batchId: batchId,
-                        shortDocumentType: shortDocumentType,
-                        totalPages: totalPages
-                    };
-                }).filter(row => row.batchId || row.shortDocumentType || row.totalPages); // Filter out completely empty rows
+        /**
+         * Renders the extracted data into an HTML table.
+         * @param {Array<Object>} data The array of objects to display.
+         * @returns {string} The HTML string for the table.
+         */
+        function renderTable(data) {
+            if (!data || data.length === 0) {
+                return '<p>No structured data found in the image.</p>';
             }
 
-            const results = [];
-            const columnXCoords = {
-                batchId: headerKeywords['batch id'] || headerKeywords['name'], // Prioritize 'batch id' then 'name'
-                totalPages: headerKeywords['total pages'],
-                documentType: headerKeywords['document type']
-            };
+            // Define the order of headers and exclude 'Description'
+            const headers = ["Asset Name", "Batch ID", "Date", "Document Type", "Total Pages"];
 
-            // Filter out null coordinates and sort by x-position to define column order
-            const sortedColumnKeys = Object.keys(columnXCoords)
-                .filter(key => columnXCoords[key] !== null)
-                .sort((a, b) => columnXCoords[a] - columnXCoords[b]);
+            let tableHtml = '<table><thead><tr>';
+            // Create table headers
+            headers.forEach(header => {
+                tableHtml += `<th>${header}</th>`;
+            });
+            tableHtml += '</tr></thead><tbody>';
 
-            // 2. Iterate through lines *after* the header to extract data
-            for (let i = headerLineIndex + 1; i < lines.length; i++) {
-                const line = lines[i];
-                const rowData = {
-                    batchId: '',
-                    shortDocumentType: '',
-                    totalPages: ''
-                };
+            // Create table rows
+            data.forEach(row => {
+                tableHtml += '<tr>';
+                headers.forEach(header => {
+                    tableHtml += `<td>${row[header] || ''}</td>`; // Use || '' for undefined values
+                });
+                tableHtml += '</tr>';
+            });
 
-                // Group words by their approximate column
-                const cellsContent = {}; // Stores words grouped by their assigned column key
-                line.words.forEach(word => {
-                    let assignedColumnKey = null;
-                    let minDistance = Infinity;
+            tableHtml += '</tbody></table>';
+            return tableHtml;
+        }
 
-                    // Find the closest column header's x-coordinate for the word's x0
-                    for (const colKey of sortedColumnKeys) {
-                        const colX = columnXCoords[colKey];
-                        if (colX !== null) {
-                            const distance = Math.abs(word.bbox.x0 - colX);
-                            // A tolerance is crucial for misalignment
-                            if (distance < minDistance && distance < 70) { // Increased tolerance for potentially wider columns/misalignment
-                                minDistance = distance;
-                                assignedColumnKey = colKey;
+        /**
+         * Downloads the given data as a CSV file.
+         * @param {Array<Object>} data The array of objects to convert to CSV.
+         */
+        function downloadCSV(data) {
+            if (!data || data.length === 0) {
+                showMessageBox('No Data', 'No data available to download.');
+                return;
+            }
+
+            // Define the order of headers and exclude 'Description'
+            const headers = ["Asset Name", "Batch ID", "Date", "Document Type", "Total Pages"];
+            const csvRows = [];
+
+            // Add headers to CSV
+            csvRows.push(headers.map(header => `"${header}"`).join(','));
+
+            // Add data rows to CSV
+            data.forEach(row => {
+                const values = headers.map(header => {
+                    const value = row[header] || '';
+                    // Escape double quotes by doubling them, then wrap in quotes
+                    return `"${String(value).replace(/"/g, '""')}"`;
+                });
+                csvRows.push(values.join(','));
+            });
+
+            const csvString = csvRows.join('\n');
+            const blob = new Blob([csvString], { type: 'text/csv;charset=utf-8;' });
+            const link = document.createElement('a');
+            link.href = URL.createObjectURL(blob);
+            link.setAttribute('download', 'extracted_data.csv');
+            document.body.appendChild(link);
+            link.click();
+            document.body.removeChild(link);
+            showMessageBox('Download Complete', 'CSV file has been downloaded.');
+        }
+
+        /**
+         * Copies the table data to the clipboard in a tab-separated format.
+         * @param {Array<Object>} data The array of objects to copy.
+         */
+        function copyTableData(data) {
+            if (!data || data.length === 0) {
+                showMessageBox('No Data', 'No data available to copy.');
+                return;
+            }
+
+            // Define the order of headers and exclude 'Description'
+            const headers = ["Asset Name", "Batch ID", "Date", "Document Type", "Total Pages"];
+            const tsvRows = [];
+
+            // Add headers to TSV
+            tsvRows.push(headers.join('\t'));
+
+            // Add data rows to TSV
+            data.forEach(row => {
+                const values = headers.map(header => String(row[header] || ''));
+                tsvRows.push(values.join('\t'));
+            });
+
+            const tsvString = tsvRows.join('\n');
+
+            // Use document.execCommand('copy') for better compatibility in iframes
+            const textarea = document.createElement('textarea');
+            textarea.value = tsvString;
+            textarea.style.position = 'fixed'; // Avoid scrolling to bottom
+            textarea.style.opacity = '0'; // Hide it
+            document.body.appendChild(textarea);
+            textarea.select();
+            try {
+                const successful = document.execCommand('copy');
+                if (successful) {
+                    showMessageBox('Copied!', 'Table data copied to clipboard.');
+                } else {
+                    showMessageBox('Copy Failed', 'Failed to copy data. Please try again.');
+                }
+            } catch (err) {
+                console.error('Copy command failed', err);
+                showMessageBox('Copy Failed', 'Failed to copy data. Your browser might not support this feature or there was an error.');
+            } finally {
+                document.body.removeChild(textarea);
+            }
+        }
+
+
+        // Event listener for OCR button click
+        ocrButton.addEventListener('click', async () => {
+            if (!base64Image) {
+                showMessageBox('No Image', 'Please upload an image first.');
+                return;
+            }
+
+            ocrButton.disabled = true;
+            ocrButton.innerHTML = '<span class="loading-spinner"></span> Processing...'; // Show loading spinner
+            ocrResult.innerHTML = 'Extracting data and formatting as table... This may take a moment.';
+            actionButtons.classList.add('hidden'); // Hide action buttons during processing
+
+            try {
+                // Prepare the payload for the Gemini API
+                // Updated prompt to specifically handle the new image format for Asset Name and Batch ID
+                const prompt = `Extract the data from this image and format it as a JSON array of objects. Each object should represent a row in the table. For "Batch ID", extract the numeric part at the very beginning of the first column (e.g., "173368" from "173368_wng-1a7e676"). For "Asset Name", extract the short code like "wng" that appears after the first underscore and before the hyphen in the first column (e.g., "wng" from "173368_wng-1a7e676"). For "Document Type", use the value from the "Type" column. For "Date", use the value from the "Creation Time" column. For "Total Pages", extract the numerical value from the "Total Pages" column. Do NOT include a "Description" field, "Total Documents", "Stage", "Processing Start Time", or "Expires on". If any of the requested fields are not found, use an empty string for that field. Ensure the keys are exactly: "Asset Name", "Batch ID", "Date", "Document Type", "Total Pages".`;
+                let chatHistory = [];
+                chatHistory.push({ role: "user", parts: [{ text: prompt }] });
+
+                const payload = {
+                    contents: [
+                        {
+                            role: "user",
+                            parts: [
+                                { text: prompt },
+                                {
+                                    inlineData: {
+                                        mimeType: imageInput.files[0] ? imageInput.files[0].type : 'image/png', // Use actual mime type or default
+                                        data: base64Image
+                                    }
+                                }
+                            ]
+                        }
+                    ],
+                    generationConfig: {
+                        responseMimeType: "application/json",
+                        responseSchema: {
+                            type: "ARRAY",
+                            items: {
+                                type: "OBJECT",
+                                properties: {
+                                    "Asset Name": { "type": "STRING" },
+                                    "Batch ID": { "type": "STRING" },
+                                    "Date": { "type": "STRING" },
+                                    "Document Type": { "type": "STRING" },
+                                    "Total Pages": { "type": "STRING" }
+                                },
+                                // Updated propertyOrdering to exclude "Description"
+                                propertyOrdering: ["Asset Name", "Batch ID", "Date", "Document Type", "Total Pages"]
                             }
                         }
                     }
+                };
 
-                    if (assignedColumnKey) {
-                        if (!cellsContent[assignedColumnKey]) {
-                            cellsContent[assignedColumnKey] = [];
-                        }
-                        cellsContent[assignedColumnKey].push(word);
-                    }
+                const apiKey = ""; // Canvas will provide this API key at runtime
+                const apiUrl = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${apiKey}`;
+
+                const response = await fetch(apiUrl, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(payload)
                 });
 
-                // Reconstruct cell text from grouped words and apply rules
-                if (cellsContent.batchId) {
-                    rowData.batchId = cellsContent.batchId.map(w => w.text).join(' ').trim();
-                } else if (cellsContent.name) { // Use 'name' if 'batchId' wasn't explicitly found but 'name' column was
-                    rowData.batchId = cellsContent.name.map(w => w.text).join(' ').trim();
-                }
+                const result = await response.json();
 
+                if (result.candidates && result.candidates.length > 0 &&
+                    result.candidates[0].content && result.candidates[0].content.parts &&
+                    result.candidates[0].content.parts.length > 0) {
+                    const jsonString = result.candidates[0].content.parts[0].text;
+                    let parsedData = JSON.parse(jsonString);
 
-                if (cellsContent.totalPages) {
-                    rowData.totalPages = cellsContent.totalPages.map(w => w.text).join(' ').trim();
-                }
+                    // Filter out duplicate batch IDs
+                    extractedTableData = filterUniqueByKey(parsedData, "Batch ID");
 
-                if (cellsContent.documentType) {
-                    let docTypeRaw = cellsContent.documentType.map(w => w.text).join(' ').trim();
-                    // Apply shortening rules
-                    const matchedKey = Object.keys(documentTypeMapping).find(key => docTypeRaw.includes(key));
-                    rowData.shortDocumentType = matchedKey ? documentTypeMapping[matchedKey] : docTypeRaw;
-                }
-
-                // Only add row if it contains at least some data in the target columns
-                if (rowData.batchId || rowData.shortDocumentType || rowData.totalPages) {
-                    results.push(rowData);
-                }
-            }
-
-            return results;
-        };
-
-
-        // Main App Component
-        const App = () => {
-            const [ocrText, setOcrText] = React.useState(''); // Still capture raw text internally for debugging if needed
-            const [tableData, setTableData] = React.useState([]); // This will store the parsed specific table data
-            const [loading, setLoading] = React.useState(false);
-            const [message, setMessage] = React.useState('');
-            const [showMessageBox, setShowMessageBox] = React.useState(false);
-            const fileInputRef = React.useRef(null);
-            const workerRef = React.useRef(null); // Ref to store the Tesseract worker instance
-
-            const showMessage = (msg) => {
-                setMessage(msg);
-                setShowMessageBox(true);
-            };
-
-            const closeMessageBox = () => {
-                setShowMessageBox(false);
-                setMessage('');
-            };
-
-            // Initialize Tesseract worker once on component mount
-            React.useEffect(() => {
-                const initializeTesseractWorker = async () => {
-                    if (!workerRef.current && window.Tesseract) {
-                        try {
-                            const worker = await window.Tesseract.createWorker('eng', 1, {
-                                // Explicitly set workerPath to ensure it loads from unpkg
-                                workerPath: 'https://unpkg.com/tesseract.js@5.0.0/dist/worker.min.js',
-                                // langPath is often inferred if workerPath is correct,
-                                // but if issues persist, explicitly set it:
-                                // langPath: 'https://unpkg.com/tesseract.js@5.0.0/lang-data/',
-                                logger: m => { /* console.log(m); */ }
-                            });
-                            workerRef.current = worker;
-                            console.log('Tesseract worker initialized successfully.');
-                        } catch (error) {
-                            console.error('Failed to initialize Tesseract worker:', error);
-                            showMessage('Failed to initialize OCR engine. Please try again or check your network connection.');
-                        }
-                    }
-                };
-
-                initializeTesseractWorker();
-
-                // Cleanup worker on component unmount
-                return () => {
-                    if (workerRef.current) {
-                        console.log('Terminating Tesseract worker.');
-                        workerRef.current.terminate();
-                        workerRef.current = null;
-                    }
-                };
-            }, []); // Empty dependency array ensures this runs once on mount and cleans up on unmount
-
-            // Handle file upload and OCR processing
-            const handleFileChange = async (event) => {
-                const file = event.target.files[0];
-                if (!file) {
-                    return;
-                }
-
-                setLoading(true);
-                setOcrText(''); // Clear raw OCR text
-                setTableData([]);
-                setShowMessageBox(false);
-
-                // Check if worker is ready
-                if (!workerRef.current) {
-                    showMessage('OCR engine is still loading or failed to initialize. Please wait a moment or refresh the page.');
-                    setLoading(false);
-                    return;
-                }
-
-                try {
-                    // Use the pre-initialized worker for recognition
-                    const { data } = await workerRef.current.recognize(file);
-
-                    setOcrText(data.text); // Still capture raw text internally for debugging if needed, but not display
-                    const extractedSpecificTable = extractSpecificTableData(data);
-                    setTableData(extractedSpecificTable);
-
-                    if (extractedSpecificTable.length === 0) {
-                        showMessage('No specific table data (Batch ID, Total Pages, Document Type) could be extracted. Please ensure the image/PDF contains clear tabular data with these headers.');
-                    }
-
-                } catch (error) {
-                    console.error('OCR Recognition Error:', error);
-                    showMessage('An error occurred during OCR processing. Please try again.');
-                    setOcrText('Error: Could not process the file.');
-                    setTableData([]);
-                } finally {
-                    setLoading(false);
-                }
-            };
-
-            // Function to download table data as CSV
-            const downloadCsv = () => {
-                if (tableData.length === 0) {
-                    showMessage('No data to download.');
-                    return;
-                }
-
-                // Create CSV header
-                const csvHeader = ["Batch ID", "Short Document Type", "Total Pages"].join(',');
-                // Map data to CSV rows
-                const csvRows = tableData.map(row =>
-                    `"${row.batchId.replace(/"/g, '""')}",` +
-                    `"${row.shortDocumentType.replace(/"/g, '""')}",` +
-                    `"${row.totalPages.replace(/"/g, '""')}"`
-                ).join('\n');
-
-                const csvContent = csvHeader + '\n' + csvRows;
-
-                const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
-                const link = document.createElement('a');
-                if (link.download !== undefined) {
-                    const url = URL.createObjectURL(blob);
-                    link.setAttribute('href', url);
-                    link.setAttribute('download', 'extracted_table_data.csv');
-                    link.style.visibility = 'hidden';
-                    document.body.appendChild(link);
-                    link.click();
-                    document.body.removeChild(link);
+                    ocrResult.innerHTML = renderTable(extractedTableData);
+                    actionButtons.classList.remove('hidden'); // Show action buttons
                 } else {
-                    showMessage('Your browser does not support downloading files directly. Please copy the text and paste it into a file.');
+                    console.error('Unexpected API response structure:', result);
+                    ocrResult.innerHTML = 'Error: Could not extract structured data. Please try again or with a different image.';
+                    showMessageBox('OCR Failed', 'Failed to extract data in table format. The image might be too complex or the table structure is unclear.');
                 }
-            };
+            } catch (error) {
+                console.error('Error performing OCR:', error);
+                ocrResult.innerHTML = 'An error occurred during OCR. Please try again.';
+                showMessageBox('Error', 'An unexpected error occurred. Please check your network connection and try again.');
+            } finally {
+                ocrButton.disabled = false;
+                ocrButton.innerHTML = 'Perform OCR'; // Restore button text
+            }
+        });
 
-            return (
-                <div className="min-h-screen bg-gray-100 flex items-center justify-center p-4">
-                    <div className="bg-white p-8 rounded-xl shadow-lg w-full max-w-4xl border border-gray-200">
-                        <h1 className="text-4xl font-extrabold text-center text-gray-800 mb-8">
-                            <span className="text-indigo-600">Table</span> OCR Extractor
-                        </h1>
+        // Event listeners for new action buttons
+        downloadCsvButton.addEventListener('click', () => {
+            downloadCSV(extractedTableData);
+        });
 
-                        {/* File Upload Section */}
-                        <div className="mb-8">
-                            <label htmlFor="fileInput" className="block text-lg font-medium text-gray-700 mb-3">
-                                Upload an Image or PDF (containing tables):
-                            </label>
-                            <input
-                                type="file"
-                                id="fileInput"
-                                ref={fileInputRef}
-                                accept="image/*, application/pdf"
-                                onChange={handleFileChange}
-                                className="custom-file-input w-full"
-                            />
-                            <p className="text-sm text-gray-500 mt-2 text-center">Supported formats: JPG, PNG, GIF, BMP, PDF</p>
-                            <p className="text-sm text-gray-500 mt-1 text-center font-semibold text-indigo-700">
-                                Optimized for tables with 'Batch ID/Name', 'Total Pages', and 'Document Type' columns.
-                            </p>
-                        </div>
-
-                        {/* Loading Indicator */}
-                        {loading && (
-                            <div className="flex items-center justify-center space-x-3 py-6">
-                                <div className="animate-spin rounded-full h-10 w-10 border-b-2 border-indigo-500"></div>
-                                <p className="text-xl text-indigo-600 font-medium">Processing table data...</p>
-                            </div>
-                        )}
-
-                        {/* Extracted Table Display */}
-                        {!loading && tableData.length > 0 && (
-                            <div className="mb-8 p-4 border border-gray-300 rounded-lg bg-gray-50 overflow-auto max-h-96">
-                                <h2 className="text-2xl font-semibold text-gray-700 mb-4">Extracted Table:</h2>
-                                <table className="min-w-full divide-y divide-gray-200 border border-gray-200 rounded-lg">
-                                    <thead className="bg-gray-200">
-                                        <tr>
-                                            <th className="px-6 py-3 text-left text-xs font-medium text-gray-600 uppercase tracking-wider">Batch ID</th>
-                                            <th className="px-6 py-3 text-left text-xs font-medium text-gray-600 uppercase tracking-wider">Short Document Type</th>
-                                            <th className="px-6 py-3 text-left text-xs font-medium text-gray-600 uppercase tracking-wider">Total Pages</th>
-                                        </tr>
-                                    </thead>
-                                    <tbody className="bg-white divide-y divide-gray-200">
-                                        {tableData.map((row, rowIndex) => (
-                                            <tr key={rowIndex} className="hover:bg-gray-50">
-                                                <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-800">{row.batchId}</td>
-                                                <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-800">{row.shortDocumentType}</td>
-                                                <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-800">{row.totalPages}</td>
-                                            </tr>
-                                        ))}
-                                    </tbody>
-                                </table>
-                            </div>
-                        )}
-
-                        {/* Download Button */}
-                        {!loading && tableData.length > 0 && (
-                            <div className="flex justify-center mb-6">
-                                <button
-                                    onClick={downloadCsv}
-                                    className="bg-green-600 hover:bg-green-700 text-white font-semibold py-2 px-6 rounded-lg shadow-md transition duration-300 ease-in-out transform hover:scale-105 focus:outline-none focus:ring-2 focus:ring-green-500 focus:ring-offset-2"
-                                >
-                                    Download as CSV
-                                </button>
-                            </div>
-                        )}
-
-                        {/* Message Box for Alerts */}
-                        {showMessageBox && (
-                            <div className="fixed inset-0 bg-gray-800 bg-opacity-75 flex items-center justify-center z-50">
-                                <div className="bg-white p-6 rounded-lg shadow-xl max-w-sm w-full text-center">
-                                    <p className="text-lg font-semibold text-gray-800 mb-4">{message}</p>
-                                    <button
-                                        onClick={closeMessageBox}
-                                        className="bg-indigo-600 hover:bg-indigo-700 text-white font-semibold py-2 px-4 rounded-lg"
-                                    >
-                                        OK
-                                    </button>
-                                </div>
-                            </div>
-                        )}
-                    </div>
-                </div>
-            );
-        };
-
-        // Render the App component into the root div
-        const root = ReactDOM.createRoot(document.getElementById('root'));
-        root.render(React.createElement(App));
+        copyTableButton.addEventListener('click', () => {
+            copyTableData(extractedTableData);
+        });
     </script>
 </body>
 </html>
