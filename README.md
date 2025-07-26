@@ -70,8 +70,35 @@ const KNOWN_BATCH_TYPES = [
     'Annual Statement',
     'Incident Report',
     'Customer Feedback',
-    'Product Survey'
+    'Product Survey',
+    'Life Limited Parts Status', // Added for new mapping
+    'Folio 12', // Added for new mapping
+    'Movement Traceability Sheet', // Added for new mapping
+    'Airbus Aircraft Inspection Report', // Added for new mapping
+    'Boeing Aircraft Readiness Log', // Added for new mapping
+    'Boeing Aircraft Readiness Log Cover Page', // Added for new mapping
+    'Engine Data Submittal', // Added for new mapping
+    'Disk Sheet', // Added for new mapping
+    'Airworthiness Certificate', // Added for new mapping
+    'Industry Item List' // Added for new mapping
 ];
+
+// Mapping for Batch Type Shortcuts
+const BATCH_TYPE_SHORTCUTS = {
+    'Life Limited Parts Status': 'LLP',
+    'Folio 12': 'FOLIO12',
+    'Movement Traceability Sheet': 'MTS',
+    'Airbus Aircraft Inspection Report': 'AIR',
+    'Boeing Aircraft Readiness Log': 'ARL',
+    'Boeing Aircraft Readiness Log Cover Page': 'ARL COVER PAGE',
+    'Engine Data Submittal': 'EDS',
+    'MTS LFP Hybrid': 'MTS HYBRID',
+    'Disk Sheet': 'DISK SHEET',
+    'Non-Incident Statement': 'NIS',
+    'Airworthiness Certificate': 'AWD',
+    'Industry Item List': 'P&W Industry Item List'
+};
+
 
 // Fuzzy matching for batch types (simple Levenshtein distance for demonstration)
 const getEditDistance = (a, b) => {
@@ -210,8 +237,8 @@ const App = () => {
         if (db && userId) {
             const appId = typeof __app_id !== 'undefined' ? __app_id : 'default-app-id';
             const userDocRef = collection(db, `artifacts/${appId}/users/${userId}/extracted_ocr_data`);
-            // Order by timestamp in ascending order
-            const q = query(userDocRef, orderBy('timestamp', 'asc'));
+            // Order by Batch ID in ascending order for strict sequencing
+            const q = query(userDocRef, orderBy('Batch ID', 'asc'));
 
             const unsubscribe = onSnapshot(q, (snapshot) => {
                 const data = snapshot.docs.map(doc => ({
@@ -640,6 +667,20 @@ const App = () => {
         }
     };
 
+    // New Reset Functionality
+    const handleReset = () => {
+        setSelectedFiles([]); // Clear uploaded files
+        setExtractedData([]); // Clear extracted data from current session
+        setUserExtractedData([]); // Clear data fetched from Firestore and displayed
+        setLoading(false);
+        setError(null);
+        setEditingRow(null);
+        setEditedData({});
+        setProcessingProgress(0);
+        // No backend clearing is done here as per requirement (only frontend display reset)
+    };
+
+
     const showConfirmationModal = (message, action) => {
         setModalContent(message);
         setModalAction(() => action); // Store the function to be called
@@ -669,11 +710,7 @@ const App = () => {
 
             <h1 className="text-4xl font-bold text-blue-700 mb-8 mt-4">Structured OCR App</h1>
 
-            {userId && (
-                <div className="bg-blue-100 text-blue-800 p-3 rounded-lg mb-6 shadow-md">
-                    <p className="text-sm">Connected as User ID: <span className="font-mono text-blue-900 break-all">{userId}</span></p>
-                </div>
-            )}
+            {/* User ID display removed as per request */}
 
             <div className="bg-white p-6 rounded-xl shadow-lg w-full max-w-4xl mb-8">
                 <h2 className="text-2xl font-semibold text-gray-700 mb-4">Upload Documents</h2>
@@ -735,6 +772,10 @@ const App = () => {
                     <h2 className="text-2xl font-semibold text-gray-700 mb-4">Extracted & Corrected Data</h2>
 
                     <div className="flex justify-end gap-2 mb-4">
+                        <button onClick={handleReset} // New Reset button
+                            className="flex items-center px-4 py-2 bg-red-500 text-white rounded-lg hover:bg-red-600 transition-colors duration-200 text-sm font-medium shadow-sm">
+                            <Trash2 className="h-4 w-4 mr-2" /> Reset
+                        </button>
                         <button onClick={() => handleExport('json')}
                             className="flex items-center px-4 py-2 bg-gray-200 text-gray-700 rounded-lg hover:bg-gray-300 transition-colors duration-200 text-sm font-medium shadow-sm">
                             <Download className="h-4 w-4 mr-2" /> Export JSON
@@ -762,12 +803,92 @@ const App = () => {
                                 {userExtractedData.map((row, index) => (
                                     <tr key={row.id || index} className={index % 2 === 0 ? 'bg-white' : 'bg-gray-50'}>
                                         <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-700">{row.originalFileName || 'N/A'}</td>
-                                        <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">{editingRow === index ? (<input type="text" value={editedData['Batch ID'] || ''} onChange={(e) => handleInputChange(e, 'Batch ID')} className={`w-full p-2 border rounded-md ${editedData['Batch ID_error'] ? 'border-red-500' : 'border-gray-300'}`} />) : (<span className={row['Batch ID_error'] ? 'text-red-600 font-semibold' : ''}>{row['Batch ID'] || 'N/A'}</span>)}</td>
-                                        <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-700">{editingRow === index ? (<input type="text" value={editedData['Asset Name'] || ''} onChange={(e) => handleInputChange(e, 'Asset Name')} className={`w-full p-2 border rounded-md ${editedData['Asset Name_error'] ? 'border-red-500' : 'border-gray-300'}`} />) : (<span className={row['Asset Name_error'] ? 'text-red-600 font-semibold' : ''}>{row['Asset Name'] || 'N/A'}</span>)}</td>
-                                        <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-700">{editingRow === index ? (<input type="text" value={editedData['Batch Type'] || ''} onChange={(e) => handleInputChange(e, 'Batch Type')} className={`w-full p-2 border rounded-md ${editedData['Batch Type_error'] ? 'border-red-500' : 'border-gray-300'}`} />) : (<span className={row['Batch Type_error'] ? 'text-red-600 font-semibold' : ''}>{row['Batch Type'] || 'N/A'}</span>)}</td>
-                                        <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-700">{editingRow === index ? (<input type="number" value={editedData['Work Unit'] || ''} onChange={(e) => handleInputChange(e, 'Work Unit')} className={`w-full p-2 border rounded-md ${editedData['Work Unit_error'] ? 'border-red-500' : 'border-gray-300'}`} />) : (<span className={row['Work Unit_error'] ? 'text-red-600 font-semibold' : ''}>{row['Work Unit'] !== null ? row['Work Unit'] : 'N/A'}</span>)}</td>
-                                        <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-700">{editingRow === index ? (<input type="number" value={editedData['Pages of Single Batch'] || ''} onChange={(e) => handleInputChange(e, 'Pages of Single Batch')} className={`w-full p-2 border rounded-md ${editedData['Pages of Single Batch_error'] ? 'border-red-500' : 'border-gray-300'}`} />) : (<span className={row['Pages of Single Batch_error'] ? 'text-red-600 font-semibold' : ''}>{row['Pages of Single Batch'] !== null ? row['Pages of Single Batch'] : 'N/A'}</span>)}</td>
-                                        <td className="px-6 py-4 whitespace-nowrap text-right text-sm font-medium">{editingRow === index ? (<><button onClick={handleSaveEdit} className="text-green-600 hover:text-green-900 mr-2 p-1 rounded-full hover:bg-green-100 transition-colors"><Save className="h-5 w-5" /></button><button onClick={handleCancelEdit} className="text-gray-600 hover:text-gray-900 p-1 rounded-full hover:bg-gray-100 transition-colors"><XCircle className="h-5 w-5" /></button></>) : (<button onClick={() => handleEditClick(index)} className="text-blue-600 hover:text-blue-900 p-1 rounded-full hover:bg-blue-100 transition-colors"><Edit className="h-5 w-5" /></button>)}</td>
+                                        <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">
+                                            {editingRow === index ? (
+                                                <input
+                                                    type="text"
+                                                    value={editedData['Batch ID'] || ''}
+                                                    onChange={(e) => handleInputChange(e, 'Batch ID')}
+                                                    className={`w-full p-2 border rounded-md ${editedData['Batch ID_error'] ? 'border-red-500' : 'border-gray-300'}`}
+                                                />
+                                            ) : (
+                                                <span className={row['Batch ID_error'] ? 'text-red-600 font-semibold' : ''}>
+                                                    {row['Batch ID'] || 'N/A'}
+                                                </span>
+                                            )}
+                                        </td>
+                                        <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-700">
+                                            {editingRow === index ? (
+                                                <input
+                                                    type="text"
+                                                    value={editedData['Asset Name'] || ''}
+                                                    onChange={(e) => handleInputChange(e, 'Asset Name')}
+                                                    className={`w-full p-2 border rounded-md ${editedData['Asset Name_error'] ? 'border-red-500' : 'border-gray-300'}`}
+                                                />
+                                            ) : (
+                                                <span className={row['Asset Name_error'] ? 'text-red-600 font-semibold' : ''}>
+                                                    {row['Asset Name'] || 'N/A'}
+                                                </span>
+                                            )}
+                                        </td>
+                                        <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-700">
+                                            {editingRow === index ? (
+                                                <input
+                                                    type="text"
+                                                    value={editedData['Batch Type'] || ''}
+                                                    onChange={(e) => handleInputChange(e, 'Batch Type')}
+                                                    className={`w-full p-2 border rounded-md ${editedData['Batch Type_error'] ? 'border-red-500' : 'border-gray-300'}`}
+                                                />
+                                            ) : (
+                                                <span className={row['Batch Type_error'] ? 'text-red-600 font-semibold' : ''}>
+                                                    {BATCH_TYPE_SHORTCUTS[row['Batch Type']] || row['Batch Type'] || 'N/A'}
+                                                </span>
+                                            )}
+                                        </td>
+                                        <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-700">
+                                            {editingRow === index ? (
+                                                <input
+                                                    type="number"
+                                                    value={editedData['Work Unit'] || ''}
+                                                    onChange={(e) => handleInputChange(e, 'Work Unit')}
+                                                    className={`w-full p-2 border rounded-md ${editedData['Work Unit_error'] ? 'border-red-500' : 'border-gray-300'}`}
+                                                />
+                                            ) : (
+                                                <span className={row['Work Unit_error'] ? 'text-red-600 font-semibold' : ''}>
+                                                    {row['Work Unit'] !== null ? row['Work Unit'] : 'N/A'}
+                                                </span>
+                                            )}
+                                        </td>
+                                        <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-700">
+                                            {editingRow === index ? (
+                                                <input
+                                                    type="number"
+                                                    value={editedData['Pages of Single Batch'] || ''}
+                                                    onChange={(e) => handleInputChange(e, 'Pages of Single Batch')}
+                                                    className={`w-full p-2 border rounded-md ${editedData['Pages of Single Batch_error'] ? 'border-red-500' : 'border-gray-300'}`}
+                                                />
+                                            ) : (
+                                                <span className={row['Pages of Single Batch_error'] ? 'text-red-600 font-semibold' : ''}>
+                                                    {row['Pages of Single Batch'] !== null ? row['Pages of Single Batch'] : 'N/A'}
+                                                </span>
+                                            )}
+                                        </td>
+                                        <td className="px-6 py-4 whitespace-nowrap text-right text-sm font-medium">
+                                            {editingRow === index ? (
+                                                <>
+                                                    <button onClick={handleSaveEdit} className="text-green-600 hover:text-green-900 mr-2 p-1 rounded-full hover:bg-green-100 transition-colors">
+                                                        <Save className="h-5 w-5" />
+                                                    </button>
+                                                    <button onClick={handleCancelEdit} className="text-gray-600 hover:text-gray-900 p-1 rounded-full hover:bg-gray-100 transition-colors">
+                                                        <XCircle className="h-5 w-5" />
+                                                    </button>
+                                                </>
+                                            ) : (
+                                                <button onClick={() => handleEditClick(index)} className="text-blue-600 hover:text-blue-900 p-1 rounded-full hover:bg-blue-100 transition-colors">
+                                                    <Edit className="h-5 w-5" />
+                                                </button>
+                                            )}
+                                        </td>
                                     </tr>
                                 ))}
                             </tbody>
@@ -775,6 +896,11 @@ const App = () => {
                     </div>
                 </div>
             )}
+
+            { /* Branding/Attribution */ }
+            <div className="mt-8 text-center text-gray-500 text-sm">
+                Built by RK
+            </div>
 
             { /* Confirmation Modal */ } {showModal && (
                 <div className="fixed inset-0 bg-gray-600 bg-opacity-50 flex items-center justify-center z-50">
