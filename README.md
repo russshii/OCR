@@ -1,588 +1,618 @@
-<!DOCTYPE html>
-<html lang="en">
-<head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Modern OCR Web App</title>
-    <!-- Tailwind CSS CDN -->
-    <script src="https://cdn.tailwindcss.com"></script>
-    <style>
-        /* Custom styles for the Inter font and overall look */
-        body {
-            font-family: 'Inter', sans-serif;
-            background-color: #f0f2f5; /* Light gray background */
-            display: flex;
-            justify-content: center;
-            align-items: center;
-            min-height: 100vh;
-            margin: 0;
-            padding: 20px;
-            box-sizing: border-box;
-        }
-        .container {
-            background-color: #ffffff;
-            border-radius: 16px; /* More rounded corners */
-            box-shadow: 0 10px 25px rgba(0, 0, 0, 0.1); /* Softer shadow */
-            padding: 30px;
-            width: 100%;
-            max-width: 900px; /* Increased max width for better table display */
-            display: flex;
-            flex-direction: column;
-            gap: 25px;
-        }
-        .input-group {
-            display: flex;
-            flex-direction: column;
-            gap: 15px;
-        }
-        .file-input-wrapper {
-            border: 2px dashed #cbd5e1; /* Dashed border for file input */
-            border-radius: 12px;
-            padding: 20px;
-            text-align: center;
-            cursor: pointer;
-            transition: border-color 0.3s ease;
-        }
-        .file-input-wrapper:hover {
-            border-color: #93c5fd; /* Light blue on hover */
-        }
-        .file-input-wrapper input[type="file"] {
-            display: none;
-        }
-        .file-input-wrapper label {
-            display: block;
-            cursor: pointer;
-            color: #4a5568; /* Darker text */
-            font-weight: 500;
-        }
-        .file-input-wrapper img {
-            max-width: 100%;
-            max-height: 200px;
-            border-radius: 8px;
-            margin-top: 15px;
-            display: none; /* Hidden by default */
-        }
-        .button-primary {
-            background-image: linear-gradient(to right, #6366f1, #8b5cf6); /* Gradient button */
-            color: white;
-            padding: 12px 25px;
-            border-radius: 12px;
-            font-weight: 600;
-            transition: transform 0.2s ease, box-shadow 0.2s ease;
-            box-shadow: 0 5px 15px rgba(99, 102, 241, 0.3);
-        }
-        .button-primary:hover {
-            transform: translateY(-2px);
-            box-shadow: 0 8px 20px rgba(99, 102, 241, 0.4);
-        }
-        .button-secondary {
-            background-color: #e2e8f0; /* Light gray */
-            color: #4a5568;
-            padding: 12px 25px;
-            border-radius: 12px;
-            font-weight: 600;
-            transition: background-color 0.2s ease, transform 0.2s ease;
-        }
-        .button-secondary:hover {
-            background-color: #cbd5e1;
-            transform: translateY(-1px);
-        }
-        .loading-spinner {
-            border: 4px solid rgba(255, 255, 255, 0.3);
-            border-top: 4px solid #ffffff;
-            border-radius: 50%;
-            width: 24px;
-            height: 24px;
-            animation: spin 1s linear infinite;
-            display: inline-block;
-            vertical-align: middle;
-            margin-right: 8px;
-        }
-        @keyframes spin {
-            0% { transform: rotate(0deg); }
-            100% { transform: rotate(360deg); }
-        }
-        .result-area {
-            background-color: #f7fafc; /* Lighter background for result */
-            border: 1px solid #e2e8f0;
-            border-radius: 12px;
-            padding: 20px;
-            min-height: 150px;
-            color: #2d3748; /* Darker text */
-            font-size: 0.95rem;
-            line-height: 1.6;
-            overflow-x: auto; /* Allow horizontal scroll for tables */
-            max-height: 400px; /* Limit height of result area */
-        }
-        .result-area table {
-            width: 100%;
-            border-collapse: collapse;
-            margin-top: 10px;
-            border-radius: 8px; /* Rounded corners for table */
-            overflow: hidden; /* Ensures rounded corners apply to content */
-        }
-        .result-area th, .result-area td {
-            border: 1px solid #e2e8f0;
-            padding: 10px 15px; /* Increased padding */
-            text-align: left;
-        }
-        .result-area th {
-            background-color: #edf2f7;
-            font-weight: 600;
-            color: #4a5568;
-            position: sticky; /* Make header sticky for scrolling */
-            top: 0;
-            z-index: 1;
-        }
-        .result-area tr:nth-child(even) {
-            background-color: #f7fafc;
-        }
-        .result-area tr:hover {
-            background-color: #e6f0ff; /* Light blue on row hover */
-        }
-        .message-box {
-            background-color: #fff;
-            border-radius: 8px;
-            box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
-            padding: 20px;
-            max-width: 400px;
-            text-align: center;
-            position: fixed;
-            top: 50%;
-            left: 50%;
-            transform: translate(-50%, -50%);
-            z-index: 1000;
-            display: none; /* Hidden by default */
-            animation: fadeIn 0.3s ease-out;
-        }
-        .message-box.show {
-            display: block;
-        }
-        .message-box h3 {
-            font-size: 1.25rem;
-            font-weight: 600;
-            margin-bottom: 10px;
-            color: #333;
-        }
-        .message-box p {
-            font-size: 1rem;
-            color: #555;
-            margin-bottom: 20px;
-        }
-        .message-box button {
-            background-color: #6366f1;
-            color: white;
-            padding: 10px 20px;
-            border-radius: 8px;
-            font-weight: 500;
-            cursor: pointer;
-            transition: background-color 0.2s ease;
-        }
-        .message-box button:hover {
-            background-color: #4f46e5;
-        }
-        @keyframes fadeIn {
-            from { opacity: 0; transform: translate(-50%, -60%); }
-            to { opacity: 1; transform: translate(-50%, -50%); }
-        }
+import React, { useState, useEffect, useRef } from 'react';
+import { initializeApp } from 'firebase/app';
+import { getAuth, signInAnonymously, signInWithCustomToken, onAuthStateChanged } from 'firebase/auth';
+import { getFirestore, doc, setDoc, collection, onSnapshot, query, orderBy, serverTimestamp } from 'firebase/firestore';
+import { Upload, FileText, XCircle, CheckCircle, Download, Loader2, Edit, Save, Trash2 } from 'lucide-react';
 
-        /* Responsive adjustments */
-        @media (max-width: 768px) {
-            .container {
-                padding: 20px;
-                margin: 10px;
-                max-width: 100%; /* Allow full width on smaller screens */
-            }
-            .button-primary, .button-secondary {
-                padding: 10px 20px;
-                font-size: 0.9rem;
-            }
-            .result-area {
-                font-size: 0.85rem;
-                padding: 15px;
-            }
-            .result-area th, .result-area td {
-                padding: 8px 10px;
+// Utility function to convert File to Base64
+const fileToBase64 = (file) => {
+    return new Promise((resolve, reject) => {
+        const reader = new FileReader();
+        reader.readAsDataURL(file);
+        reader.onload = () => resolve(reader.result.split(',')[1]);
+        reader.onerror = (error) => reject(error);
+    });
+};
+
+// Known batch types for validation/correction
+const KNOWN_BATCH_TYPES = [
+    'Non-Incident Statement',
+    'MTS LFP Hybrid',
+    'Daily Report',
+    'Weekly Summary',
+    'Monthly Report',
+    'Quarterly Review',
+    'Annual Statement',
+    'Incident Report',
+    'Customer Feedback',
+    'Product Survey'
+];
+
+// Fuzzy matching for batch types (simple Levenshtein distance for demonstration)
+const getEditDistance = (a, b) => {
+    if (a.length === 0) return b.length;
+    if (b.length === 0) return a.length;
+
+    const matrix = [];
+
+    // increment along the first column of each row
+    for (let i = 0; i <= b.length; i++) {
+        matrix[i] = [i];
+    }
+
+    // increment each column in the first row
+    for (let j = 0; j <= a.length; j++) {
+        matrix[0][j] = j;
+    }
+
+    // Fill in the rest of the matrix
+    for (let i = 1; i <= b.length; i++) {
+        for (let j = 1; j <= a.length; j++) {
+            if (b.charAt(i - 1) === a.charAt(j - 1)) {
+                matrix[i][j] = matrix[i - 1][j - 1];
+            } else {
+                matrix[i][j] = Math.min(matrix[i - 1][j - 1] + 1, // substitution
+                    Math.min(matrix[i][j - 1] + 1, // insertion
+                        matrix[i - 1][j] + 1)); // deletion
             }
         }
-    </style>
-</head>
-<body>
-    <div class="container">
-        <h1 class="text-3xl font-bold text-center text-gray-800 mb-4">Image to Table Data Extractor</h1>
+    }
 
-        <div class="input-group">
-            <div class="file-input-wrapper" id="fileInputWrapper">
-                <input type="file" id="imageInput" accept="image/*">
-                <label for="imageInput" class="flex flex-col items-center justify-center">
-                    <svg class="w-12 h-12 text-gray-400 mb-2" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
-                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12"></path>
-                    </svg>
-                    <span class="text-lg font-semibold">Drag & Drop your image here or Click to Upload</span>
-                    <span class="text-sm text-gray-500 mt-1">Or paste an image from clipboard (Ctrl+V / Cmd+V)</span>
-                </label>
-                <img id="imagePreview" src="#" alt="Image Preview" class="mt-4 hidden">
-            </div>
-            <button id="ocrButton" class="button-primary w-full flex items-center justify-center" disabled>
-                Perform OCR
-            </button>
-        </div>
+    return matrix[b.length][a.length];
+};
 
-        <div class="output-group">
-            <h2 class="text-xl font-semibold text-gray-700 mb-3">Extracted Data:</h2>
-            <div id="ocrResult" class="result-area">
-                Upload an image or paste from clipboard and click 'Perform OCR' to see the extracted data in a table.
-            </div>
-            <div id="actionButtons" class="flex flex-wrap justify-center gap-4 mt-4 hidden">
-                <button id="downloadCsvButton" class="button-secondary flex-1">Download CSV</button>
-                <button id="copyTableButton" class="button-secondary flex-1">Copy Table Data</button>
-            </div>
-        </div>
-    </div>
+const fuzzyMatchBatchType = (input) => {
+    let bestMatch = null;
+    let minDistance = Infinity;
 
-    <!-- Message Box for alerts -->
-    <div id="messageBox" class="message-box">
-        <h3 id="messageBoxTitle"></h3>
-        <p id="messageBoxContent"></p>
-        <button id="messageBoxClose">OK</button>
-    </div>
+    const lowerInput = input.toLowerCase();
 
-    <script type="module">
-        // Get references to DOM elements
-        const imageInput = document.getElementById('imageInput');
-        const imagePreview = document.getElementById('imagePreview');
-        const ocrButton = document.getElementById('ocrButton');
-        const ocrResult = document.getElementById('ocrResult');
-        const fileInputWrapper = document.getElementById('fileInputWrapper');
-        const messageBox = document.getElementById('messageBox');
-        const messageBoxTitle = document.getElementById('messageBoxTitle');
-        const messageBoxContent = document.getElementById('messageBoxContent');
-        const messageBoxClose = document.getElementById('messageBoxClose');
-        const actionButtons = document.getElementById('actionButtons');
-        const downloadCsvButton = document.getElementById('downloadCsvButton');
-        const copyTableButton = document.getElementById('copyTableButton');
-
-        let base64Image = ''; // To store the base64 encoded image
-        let extractedTableData = []; // To store the parsed data for CSV/Copy
-
-        // Function to show custom message box
-        function showMessageBox(title, message) {
-            messageBoxTitle.textContent = title;
-            messageBoxContent.textContent = message;
-            messageBox.classList.add('show');
+    for (const type of KNOWN_BATCH_TYPES) {
+        const distance = getEditDistance(lowerInput, type.toLowerCase());
+        if (distance < minDistance) {
+            minDistance = distance;
+            bestMatch = type;
         }
+    }
+    // Set a threshold for "fuzzy" match (e.g., if distance is too high, it's not a good match)
+    // This threshold can be adjusted based on expected OCR error rates.
+    if (minDistance <= Math.floor(input.length / 3) || minDistance <= 3) { // Example threshold
+        return bestMatch;
+    }
+    return null; // No good fuzzy match found
+};
 
-        // Function to hide custom message box
-        messageBoxClose.addEventListener('click', () => {
-            messageBox.classList.remove('show');
-        });
 
-        /**
-         * Processes an image file (from input or paste) and updates the UI.
-         * @param {File} file The image file to process.
-         */
-        function processImageFile(file) {
-            if (!file || !file.type.startsWith('image/')) {
-                showMessageBox('Invalid File Type', 'Please upload or paste an image file (PNG, JPG, JPEG).');
-                imagePreview.classList.add('hidden');
-                ocrButton.disabled = true;
-                ocrResult.innerHTML = 'Upload an image or paste from clipboard and click \'Perform OCR\' to see the extracted data.';
-                actionButtons.classList.add('hidden');
-                return;
-            }
+const App = () => {
+    const [selectedFiles, setSelectedFiles] = useState([]);
+    const [extractedData, setExtractedData] = useState([]);
+    const [loading, setLoading] = useState(false);
+    const [error, setError] = useState(null);
+    const [editingRow, setEditingRow] = useState(null);
+    const [editedData, setEditedData] = useState({});
+    const [showModal, setShowModal] = useState(false);
+    const [modalContent, setModalContent] = useState('');
+    const [modalAction, setModalAction] = useState(null);
 
-            const reader = new FileReader();
-            reader.onload = (e) => {
-                imagePreview.src = e.target.result;
-                imagePreview.classList.remove('hidden');
-                base64Image = e.target.result.split(',')[1]; // Extract base64 part
-                ocrButton.disabled = false; // Enable OCR button once image is loaded
-                ocrResult.innerHTML = 'Image loaded. Click \'Perform OCR\' to extract data.';
-                actionButtons.classList.add('hidden'); // Hide action buttons until new data is extracted
+    // Firestore state
+    const [db, setDb] = useState(null);
+    const [auth, setAuth] = useState(null);
+    const [userId, setUserId] = useState(null);
+    const [userExtractedData, setUserExtractedData] = useState([]);
+
+    // Initialize Firebase
+    useEffect(() => {
+        try {
+            const firebaseConfig = JSON.parse(typeof __firebase_config !== 'undefined' ? __firebase_config : '{}');
+            const app = initializeApp(firebaseConfig);
+            const firestore = getFirestore(app);
+            const authentication = getAuth(app);
+            setDb(firestore);
+            setAuth(authentication);
+
+            // Sign in anonymously or with custom token
+            const signIn = async () => {
+                try {
+                    if (typeof __initial_auth_token !== 'undefined') {
+                        await signInWithCustomToken(authentication, __initial_auth_token);
+                    } else {
+                        await signInAnonymously(authentication);
+                    }
+                } catch (e) {
+                    console.error("Firebase Auth Error:", e);
+                    setError("Failed to authenticate with Firebase.");
+                }
             };
-            reader.readAsDataURL(file); // Read file as Data URL (base64)
-        }
+            signIn();
 
-        // Event listener for image input change (from file selection)
-        imageInput.addEventListener('change', (event) => {
-            const file = event.target.files[0];
-            processImageFile(file);
-        });
-
-        // Drag and drop functionality
-        fileInputWrapper.addEventListener('dragover', (event) => {
-            event.preventDefault();
-            fileInputWrapper.classList.add('border-blue-500');
-        });
-
-        fileInputWrapper.addEventListener('dragleave', (event) => {
-            event.preventDefault();
-            fileInputWrapper.classList.remove('border-blue-500');
-        });
-
-        fileInputWrapper.addEventListener('drop', (event) => {
-            event.preventDefault();
-            fileInputWrapper.classList.remove('border-blue-500');
-            const files = event.dataTransfer.files;
-            if (files.length > 0) {
-                processImageFile(files[0]); // Process the first dropped file
-            }
-        });
-
-        // Paste functionality (for images from clipboard)
-        document.addEventListener('paste', (event) => {
-            const items = event.clipboardData.items;
-            for (let i = 0; i < items.length; i++) {
-                if (items[i].type.indexOf('image') !== -1) {
-                    const file = items[i].getAsFile();
-                    if (file) {
-                        processImageFile(file);
-                        showMessageBox('Image Pasted', 'Image successfully pasted from clipboard.');
-                        event.preventDefault(); // Prevent default paste behavior
-                        return;
-                    }
-                }
-            }
-        });
-
-
-        /**
-         * Filters out duplicate rows based on a specified key (e.g., "Batch ID").
-         * Keeps the first occurrence of each unique key.
-         * @param {Array<Object>} data The array of objects to filter.
-         * @param {string} key The key to check for duplicates.
-         * @returns {Array<Object>} A new array with unique entries.
-         */
-        function filterUniqueByKey(data, key) {
-            const seen = new Set();
-            return data.filter(item => {
-                const value = item[key];
-                if (seen.has(value)) {
-                    return false;
-                }
-                seen.add(value);
-                return true;
-            });
-        }
-
-        /**
-         * Renders the extracted data into an HTML table.
-         * @param {Array<Object>} data The array of objects to display.
-         * @returns {string} The HTML string for the table.
-         */
-        function renderTable(data) {
-            if (!data || data.length === 0) {
-                return '<p>No structured data found in the image.</p>';
-            }
-
-            // Define the order of headers and exclude 'Description'
-            const headers = ["Asset Name", "Batch ID", "Date", "Document Type", "Total Pages"];
-
-            let tableHtml = '<table><thead><tr>';
-            // Create table headers
-            headers.forEach(header => {
-                tableHtml += `<th>${header}</th>`;
-            });
-            tableHtml += '</tr></thead><tbody>';
-
-            // Create table rows
-            data.forEach(row => {
-                tableHtml += '<tr>';
-                headers.forEach(header => {
-                    tableHtml += `<td>${row[header] || ''}</td>`; // Use || '' for undefined values
-                });
-                tableHtml += '</tr>';
-            });
-
-            tableHtml += '</tbody></table>';
-            return tableHtml;
-        }
-
-        /**
-         * Downloads the given data as a CSV file.
-         * @param {Array<Object>} data The array of objects to convert to CSV.
-         */
-        function downloadCSV(data) {
-            if (!data || data.length === 0) {
-                showMessageBox('No Data', 'No data available to download.');
-                return;
-            }
-
-            // Define the order of headers and exclude 'Description'
-            const headers = ["Asset Name", "Batch ID", "Date", "Document Type", "Total Pages"];
-            const csvRows = [];
-
-            // Add headers to CSV
-            csvRows.push(headers.map(header => `"${header}"`).join(','));
-
-            // Add data rows to CSV
-            data.forEach(row => {
-                const values = headers.map(header => {
-                    const value = row[header] || '';
-                    // Escape double quotes by doubling them, then wrap in quotes
-                    return `"${String(value).replace(/"/g, '""')}"`;
-                });
-                csvRows.push(values.join(','));
-            });
-
-            const csvString = csvRows.join('\n');
-            const blob = new Blob([csvString], { type: 'text/csv;charset=utf-8;' });
-            const link = document.createElement('a');
-            link.href = URL.createObjectURL(blob);
-            link.setAttribute('download', 'extracted_data.csv');
-            document.body.appendChild(link);
-            link.click();
-            document.body.removeChild(link);
-            showMessageBox('Download Complete', 'CSV file has been downloaded.');
-        }
-
-        /**
-         * Copies the table data to the clipboard in a tab-separated format.
-         * @param {Array<Object>} data The array of objects to copy.
-         */
-        function copyTableData(data) {
-            if (!data || data.length === 0) {
-                showMessageBox('No Data', 'No data available to copy.');
-                return;
-            }
-
-            // Define the order of headers and exclude 'Description'
-            const headers = ["Asset Name", "Batch ID", "Date", "Document Type", "Total Pages"];
-            const tsvRows = [];
-
-            // Add headers to TSV
-            tsvRows.push(headers.join('\t'));
-
-            // Add data rows to TSV
-            data.forEach(row => {
-                const values = headers.map(header => String(row[header] || ''));
-                tsvRows.push(values.join('\t'));
-            });
-
-            const tsvString = tsvRows.join('\n');
-
-            // Use document.execCommand('copy') for better compatibility in iframes
-            const textarea = document.createElement('textarea');
-            textarea.value = tsvString;
-            textarea.style.position = 'fixed'; // Avoid scrolling to bottom
-            textarea.style.opacity = '0'; // Hide it
-            document.body.appendChild(textarea);
-            textarea.select();
-            try {
-                const successful = document.execCommand('copy');
-                if (successful) {
-                    showMessageBox('Copied!', 'Table data copied to clipboard.');
+            // Listen for auth state changes
+            const unsubscribeAuth = onAuthStateChanged(authentication, (user) => {
+                if (user) {
+                    setUserId(user.uid);
                 } else {
-                    showMessageBox('Copy Failed', 'Failed to copy data. Please try again.');
+                    setUserId(null);
                 }
-            } catch (err) {
-                console.error('Copy command failed', err);
-                showMessageBox('Copy Failed', 'Failed to copy data. Your browser might not support this feature or there was an error.');
-            } finally {
-                document.body.removeChild(textarea);
-            }
+            });
+
+            return () => unsubscribeAuth();
+        } catch (e) {
+            console.error("Firebase Initialization Error:", e);
+            setError("Failed to initialize Firebase. Check __firebase_config.");
         }
+    }, []);
+
+    // Listen for real-time data from Firestore
+    useEffect(() => {
+        if (db && userId) {
+            const appId = typeof __app_id !== 'undefined' ? __app_id : 'default-app-id';
+            const userDocRef = collection(db, `artifacts/${appId}/users/${userId}/extracted_ocr_data`);
+            const q = query(userDocRef, orderBy('timestamp', 'desc'));
+
+            const unsubscribe = onSnapshot(q, (snapshot) => {
+                const data = snapshot.docs.map(doc => ({
+                    id: doc.id,
+                    ...doc.data()
+                }));
+                setUserExtractedData(data);
+            }, (err) => {
+                console.error("Firestore data fetch error:", err);
+                setError("Failed to fetch data from Firestore.");
+            });
+
+            return () => unsubscribe();
+        }
+    }, [db, userId]);
 
 
-        // Event listener for OCR button click
-        ocrButton.addEventListener('click', async () => {
-            if (!base64Image) {
-                showMessageBox('No Image', 'Please upload an image first.');
-                return;
+    const handleFileChange = (event) => {
+        setError(null);
+        const files = Array.from(event.target.files);
+        setSelectedFiles(prev => [...prev, ...files]);
+    };
+
+    const handleRemoveFile = (indexToRemove) => {
+        setSelectedFiles(prev => prev.filter((_, index) => index !== indexToRemove));
+    };
+
+    const processImageWithLLM = async (base64ImageData) => {
+        const prompt = `You are an expert OCR post-processor. Analyze the provided image, which contains a table with batch details. Your task is to extract the following information for each row: 'Batch ID', 'Asset Name', 'Batch Type', 'Work Unit', and 'Pages of Single Batch'.
+        For 'Batch ID', extract the full ID.
+        For 'Asset Name', extract the part of the Batch ID between hyphens (e.g., 'btita' from '173974-btita-97c2'). If no hyphenated part, infer from common names or leave null.
+        For 'Batch Type', identify the type from the third column.
+        For 'Work Unit' and 'Pages of Single Batch', extract the integer values from the last two columns.
+        Return the data as a JSON array of objects, where each object represents a row. If a field cannot be confidently extracted, use null.
+        Example JSON structure:
+        [
+            {
+                "Batch ID": "173974-btita-97c2",
+                "Asset Name": "btita",
+                "Batch Type": "Non-Incident Statement",
+                "Work Unit": 1,
+                "Pages of Single Batch": 1
             }
+        ]
+        `;
 
-            ocrButton.disabled = true;
-            ocrButton.innerHTML = '<span class="loading-spinner"></span> Processing...'; // Show loading spinner
-            ocrResult.innerHTML = 'Extracting data and formatting as table... This may take a moment.';
-            actionButtons.classList.add('hidden'); // Hide action buttons during processing
-
-            try {
-                // Prepare the payload for the Gemini API
-                // Updated prompt to specifically handle the new image format for Asset Name and Batch ID
-                const prompt = `Extract the data from this image and format it as a JSON array of objects. Each object should represent a row in the table. For "Batch ID", extract the numeric part at the very beginning of the first column (e.g., "173368" from "173368_wng-1a7e676"). For "Asset Name", extract the short code like "wng" that appears after the first underscore and before the hyphen in the first column (e.g., "wng" from "173368_wng-1a7e676"). For "Document Type", use the value from the "Type" column. For "Date", use the value from the "Creation Time" column. For "Total Pages", extract the numerical value from the "Total Pages" column. Do NOT include a "Description" field, "Total Documents", "Stage", "Processing Start Time", or "Expires on". If any of the requested fields are not found, use an empty string for that field. Ensure the keys are exactly: "Asset Name", "Batch ID", "Date", "Document Type", "Total Pages".`;
-                let chatHistory = [];
-                chatHistory.push({ role: "user", parts: [{ text: prompt }] });
-
-                const payload = {
-                    contents: [
-                        {
-                            role: "user",
-                            parts: [
-                                { text: prompt },
-                                {
-                                    inlineData: {
-                                        mimeType: imageInput.files[0] ? imageInput.files[0].type : 'image/png', // Use actual mime type or default
-                                        data: base64Image
-                                    }
-                                }
-                            ]
-                        }
-                    ],
-                    generationConfig: {
-                        responseMimeType: "application/json",
-                        responseSchema: {
-                            type: "ARRAY",
-                            items: {
-                                type: "OBJECT",
-                                properties: {
-                                    "Asset Name": { "type": "STRING" },
-                                    "Batch ID": { "type": "STRING" },
-                                    "Date": { "type": "STRING" },
-                                    "Document Type": { "type": "STRING" },
-                                    "Total Pages": { "type": "STRING" }
-                                },
-                                // Updated propertyOrdering to exclude "Description"
-                                propertyOrdering: ["Asset Name", "Batch ID", "Date", "Document Type", "Total Pages"]
+        const payload = {
+            contents: [{
+                role: "user",
+                parts: [{
+                    text: prompt
+                }, {
+                    inlineData: {
+                        mimeType: "image/png", // Assuming PNG, adjust if needed
+                        data: base64ImageData
+                    }
+                }]
+            }],
+            generationConfig: {
+                responseMimeType: "application/json",
+                responseSchema: {
+                    type: "ARRAY",
+                    items: {
+                        type: "OBJECT",
+                        properties: {
+                            "Batch ID": {
+                                "type": "STRING"
+                            },
+                            "Asset Name": {
+                                "type": "STRING"
+                            },
+                            "Batch Type": {
+                                "type": "STRING"
+                            },
+                            "Work Unit": {
+                                "type": "INTEGER"
+                            },
+                            "Pages of Single Batch": {
+                                "type": "INTEGER"
                             }
-                        }
+                        },
+                        required: ["Batch ID", "Asset Name", "Batch Type", "Work Unit", "Pages of Single Batch"]
                     }
-                };
-
-                const apiKey = ""; // Canvas will provide this API key at runtime
-                const apiUrl = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${apiKey}`;
-
-                const response = await fetch(apiUrl, {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify(payload)
-                });
-
-                const result = await response.json();
-
-                if (result.candidates && result.candidates.length > 0 &&
-                    result.candidates[0].content && result.candidates[0].content.parts &&
-                    result.candidates[0].content.parts.length > 0) {
-                    const jsonString = result.candidates[0].content.parts[0].text;
-                    let parsedData = JSON.parse(jsonString);
-
-                    // Filter out duplicate batch IDs
-                    extractedTableData = filterUniqueByKey(parsedData, "Batch ID");
-
-                    ocrResult.innerHTML = renderTable(extractedTableData);
-                    actionButtons.classList.remove('hidden'); // Show action buttons
-                } else {
-                    console.error('Unexpected API response structure:', result);
-                    ocrResult.innerHTML = 'Error: Could not extract structured data. Please try again or with a different image.';
-                    showMessageBox('OCR Failed', 'Failed to extract data in table format. The image might be too complex or the table structure is unclear.');
                 }
-            } catch (error) {
-                console.error('Error performing OCR:', error);
-                ocrResult.innerHTML = 'An error occurred during OCR. Please try again.';
-                showMessageBox('Error', 'An unexpected error occurred. Please check your network connection and try again.');
-            } finally {
-                ocrButton.disabled = false;
-                ocrButton.innerHTML = 'Perform OCR'; // Restore button text
             }
+        };
+
+        const apiKey = ""; // Canvas will provide this
+        const apiUrl = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${apiKey}`;
+
+        try {
+            const response = await fetch(apiUrl, {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json'
+                },
+                body: JSON.stringify(payload)
+            });
+
+            if (!response.ok) {
+                const errorData = await response.json();
+                console.error("LLM API Error:", errorData);
+                throw new Error(`LLM API request failed: ${errorData.error?.message || response.statusText}`);
+            }
+
+            const result = await response.json();
+            if (result.candidates && result.candidates.length > 0 &&
+                result.candidates[0].content && result.candidates[0].content.parts &&
+                result.candidates[0].content.parts.length > 0) {
+                const jsonString = result.candidates[0].content.parts[0].text;
+                return JSON.parse(jsonString);
+            } else {
+                throw new Error("No content found in LLM response.");
+            }
+        } catch (err) {
+            console.error("Error calling LLM API:", err);
+            throw new Error(`Failed to process image with AI: ${err.message}`);
+        }
+    };
+
+    const processExtractedData = (rawData) => {
+        return rawData.map(row => {
+            const processedRow = { ...row
+            };
+
+            // 1. Batch ID Validation (Basic Regex)
+            const batchIdRegex = /^[0-9a-fA-F]{6}-[a-zA-Z0-9]+-[0-9a-fA-F]{4}$/;
+            if (processedRow['Batch ID'] && !batchIdRegex.test(processedRow['Batch ID'])) {
+                processedRow['Batch ID_error'] = true;
+            }
+
+            // 2. Asset Name Extraction/Correction
+            if (processedRow['Batch ID']) {
+                const parts = processedRow['Batch ID'].split('-');
+                if (parts.length > 1) {
+                    let extractedAsset = parts[1].toLowerCase();
+                    // Simple dictionary-based correction for common OCR errors (e.g., britair vs btita)
+                    if (extractedAsset.includes('britair')) {
+                        extractedAsset = 'britair';
+                    } else if (extractedAsset.includes('btita')) {
+                        extractedAsset = 'btita';
+                    }
+                    processedRow['Asset Name'] = extractedAsset;
+                } else {
+                    processedRow['Asset Name'] = null; // Could not extract from Batch ID
+                }
+            }
+
+            // 3. Batch Type Fuzzy Match
+            if (processedRow['Batch Type']) {
+                const correctedType = fuzzyMatchBatchType(processedRow['Batch Type']);
+                if (correctedType) {
+                    processedRow['Batch Type'] = correctedType;
+                } else {
+                    processedRow['Batch Type_error'] = true;
+                }
+            } else {
+                processedRow['Batch Type_error'] = true; // Missing batch type
+            }
+
+            // 4. Work Unit & Page Count Validation/Correction
+            ['Work Unit', 'Pages of Single Batch'].forEach(field => {
+                let value = processedRow[field];
+                if (typeof value === 'string') {
+                    // Replace common OCR errors (e.g., 'l' with '1', 'o' with '0')
+                    value = value.replace(/l/g, '1').replace(/o/g, '0').replace(/\s/g, '');
+                }
+                const parsedValue = parseInt(value, 10);
+                if (isNaN(parsedValue)) {
+                    processedRow[field] = null;
+                    processedRow[`${field}_error`] = true;
+                } else {
+                    processedRow[field] = parsedValue;
+                }
+            });
+
+            return processedRow;
+        });
+    };
+
+    const handleProcessImages = async () => {
+        if (selectedFiles.length === 0) {
+            setError("Please select at least one image file.");
+            return;
+        }
+
+        setLoading(true);
+        setError(null);
+        setExtractedData([]); // Clear previous results
+
+        let allProcessedData = [];
+
+        for (const file of selectedFiles) {
+            try {
+                const base64 = await fileToBase64(file);
+                const rawLLMData = await processImageWithLLM(base64);
+                const processed = processExtractedData(rawLLMData);
+                allProcessedData = [...allProcessedData, ...processed];
+            } catch (err) {
+                console.error(`Error processing file ${file.name}:`, err);
+                setError(`Failed to process ${file.name}: ${err.message}`);
+                // Continue to next file even if one fails
+            }
+        }
+        setExtractedData(allProcessedData);
+        setLoading(false);
+
+        // Save to Firestore
+        if (db && userId && allProcessedData.length > 0) {
+            const appId = typeof __app_id !== 'undefined' ? __app_id : 'default-app-id';
+            const userDocRef = collection(db, `artifacts/${appId}/users/${userId}/extracted_ocr_data`);
+            for (const dataRow of allProcessedData) {
+                try {
+                    await setDoc(doc(userDocRef), { // Use setDoc with a new doc ref to auto-generate ID
+                        ...dataRow,
+                        timestamp: serverTimestamp()
+                    });
+                } catch (e) {
+                    console.error("Error saving data to Firestore:", e);
+                    setError("Failed to save some data to Firestore.");
+                }
+            }
+        }
+    };
+
+    const handleEditClick = (index) => {
+        setEditingRow(index);
+        setEditedData({ ...extractedData[index]
+        });
+    };
+
+    const handleSaveEdit = () => {
+        const updatedData = [...extractedData];
+        updatedData[editingRow] = processExtractedData([editedData])[0]; // Re-process edited row for validation
+        setExtractedData(updatedData);
+        setEditingRow(null);
+
+        // Update in Firestore
+        if (db && userId && updatedData[editingRow] && updatedData[editingRow].id) {
+            const appId = typeof __app_id !== 'undefined' ? __app_id : 'default-app-id';
+            const docRef = doc(db, `artifacts/${appId}/users/${userId}/extracted_ocr_data`, updatedData[editingRow].id);
+            setDoc(docRef, { ...updatedData[editingRow],
+                timestamp: serverTimestamp()
+            }, {
+                merge: true
+            }).catch(e => {
+                console.error("Error updating document in Firestore:", e);
+                setError("Failed to update data in Firestore.");
+            });
+        }
+    };
+
+    const handleCancelEdit = () => {
+        setEditingRow(null);
+        setEditedData({});
+    };
+
+    const handleInputChange = (e, field) => {
+        setEditedData({
+            ...editedData,
+            [field]: e.target.value
+        });
+    };
+
+    const handleExport = (format) => {
+        if (extractedData.length === 0) {
+            setModalContent("No data to export.");
+            setModalAction(null);
+            setShowModal(true);
+            return;
+        }
+
+        // Correctly destructure properties with spaces by quoting them
+        const dataToExport = extractedData.map((row) => {
+            const newRow = { ...row
+            };
+            delete newRow['Batch ID_error'];
+            delete newRow['Asset Name_error'];
+            delete newRow['Batch Type_error'];
+            delete newRow['Work Unit_error'];
+            delete newRow['Pages of Single Batch_error'];
+            return newRow;
         });
 
-        // Event listeners for new action buttons
-        downloadCsvButton.addEventListener('click', () => {
-            downloadCSV(extractedTableData);
-        });
+        if (format === 'json') {
+            const jsonString = JSON.stringify(dataToExport, null, 2);
+            const blob = new Blob([jsonString], {
+                type: 'application/json'
+            });
+            const url = URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = 'ocr_data.json';
+            document.body.appendChild(a);
+            a.click();
+            document.body.removeChild(a);
+            URL.revokeObjectURL(url);
+        } else if (format === 'csv') {
+            const headers = Object.keys(dataToExport[0] || {}).join(',');
+            const rows = dataToExport.map(row =>
+                Object.values(row).map(value => {
+                    // Handle commas and quotes in CSV
+                    if (typeof value === 'string' && value.includes(',')) {
+                        return `"${value.replace(/"/g, '""')}"`;
+                    }
+                    return value;
+                }).join(',')
+            );
+            const csvString = [headers, ...rows].join('\n');
+            const blob = new Blob([csvString], {
+                type: 'text/csv'
+            });
+            const url = URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = 'ocr_data.csv';
+            document.body.appendChild(a);
+            a.click();
+            document.body.removeChild(a);
+            URL.revokeObjectURL(url);
+        }
+    };
 
-        copyTableButton.addEventListener('click', () => {
-            copyTableData(extractedTableData);
-        });
-    </script>
-</body>
-</html>
+    const showConfirmationModal = (message, action) => {
+        setModalContent(message);
+        setModalAction(() => action); // Store the function to be called
+        setShowModal(true);
+    };
+
+    const handleModalConfirm = () => {
+        if (modalAction) {
+            modalAction();
+        }
+        setShowModal(false);
+        setModalAction(null);
+    };
+
+    const handleModalCancel = () => {
+        setShowModal(false);
+        setModalAction(null);
+    };
+
+
+    return (
+        <div className="min-h-screen bg-gray-100 p-4 font-inter text-gray-800 flex flex-col items-center">
+            <style>{`
+            @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap');
+            body { font-family: 'Inter', sans-serif; }
+            `}</style>
+
+            <h1 className="text-4xl font-bold text-blue-700 mb-8 mt-4">Structured OCR App</h1>
+
+            {userId && (
+                <div className="bg-blue-100 text-blue-800 p-3 rounded-lg mb-6 shadow-md">
+                    <p className="text-sm">Connected as User ID: <span className="font-mono text-blue-900 break-all">{userId}</span></p>
+                </div>
+            )}
+
+            <div className="bg-white p-6 rounded-xl shadow-lg w-full max-w-4xl mb-8">
+                <h2 className="text-2xl font-semibold text-gray-700 mb-4">Upload Documents</h2>
+
+                <div className="border-2 border-dashed border-gray-300 rounded-lg p-6 text-center cursor-pointer hover:border-blue-500 transition-all duration-200"
+                    onClick={() => document.getElementById('fileInput').click()}>
+                    <Upload className="mx-auto h-12 w-12 text-gray-400 mb-3" />
+                    <p className="text-gray-600 font-medium">Drag & drop images here, or click to browse</p>
+                    <input type="file" id="fileInput" className="hidden" multiple accept="image/*" onChange={handleFileChange} />
+                </div>
+
+                {selectedFiles.length > 0 && (
+                    <div className="mt-6">
+                        <h3 className="text-lg font-medium text-gray-700 mb-3">Selected Files:</h3>
+                        <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-4">
+                            {selectedFiles.map((file, index) => (
+                                <div key={index} className="relative bg-gray-50 p-3 rounded-lg shadow-sm flex items-center justify-between">
+                                    <div className="flex items-center">
+                                        <FileText className="h-5 w-5 text-blue-500 mr-2" />
+                                        <span className="text-sm text-gray-700 truncate">{file.name}</span>
+                                    </div>
+                                    <button onClick={() => handleRemoveFile(index)}
+                                        className="ml-3 text-red-500 hover:text-red-700 p-1 rounded-full hover:bg-red-100 transition-colors">
+                                        <XCircle className="h-5 w-5" />
+                                    </button>
+                                </div>
+                            ))}
+                        </div>
+                        <button onClick={handleProcessImages} disabled={loading || selectedFiles.length === 0}
+                            className="mt-6 w-full bg-blue-600 text-white py-3 px-6 rounded-lg font-semibold text-lg hover:bg-blue-700 transition-colors duration-300 flex items-center justify-center disabled:opacity-50 disabled:cursor-not-allowed shadow-md">
+                            {loading ? (
+                                <>
+                                    <Loader2 className="animate-spin mr-3" /> Processing...
+                                </>
+                            ) : (
+                                <>
+                                    <CheckCircle className="mr-3" /> Extract Data
+                                </>
+                            )}
+                        </button>
+                    </div>
+                )}
+            </div>
+
+            {error && (
+                <div className="bg-red-100 border border-red-400 text-red-700 px-4 py-3 rounded-lg relative w-full max-w-4xl mb-8 shadow-md"
+                    role="alert">
+                    <strong className="font-bold">Error!</strong> <span className="block sm:inline">{error}</span>
+                </div>
+            )}
+
+            {(extractedData.length > 0 || userExtractedData.length > 0) && (
+                <div className="bg-white p-6 rounded-xl shadow-lg w-full max-w-4xl mb-8">
+                    <h2 className="text-2xl font-semibold text-gray-700 mb-4">Extracted & Corrected Data</h2>
+
+                    <div className="flex justify-end gap-2 mb-4">
+                        <button onClick={() => handleExport('json')}
+                            className="flex items-center px-4 py-2 bg-gray-200 text-gray-700 rounded-lg hover:bg-gray-300 transition-colors duration-200 text-sm font-medium shadow-sm">
+                            <Download className="h-4 w-4 mr-2" /> Export JSON
+                        </button>
+                        <button onClick={() => handleExport('csv')}
+                            className="flex items-center px-4 py-2 bg-gray-200 text-gray-700 rounded-lg hover:bg-gray-300 transition-colors duration-200 text-sm font-medium shadow-sm">
+                            <Download className="h-4 w-4 mr-2" /> Export CSV
+                        </button>
+                    </div>
+
+                    <div className="overflow-x-auto rounded-lg border border-gray-200">
+                        <table className="min-w-full divide-y divide-gray-200">
+                            <thead className="bg-gray-50">
+                                <tr>
+                                    <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Batch ID</th>
+                                    <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Asset Name</th>
+                                    <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Batch Type</th>
+                                    <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Work Unit</th>
+                                    <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Pages of Single Batch</th>
+                                    <th scope="col" className="relative px-6 py-3"><span className="sr-only">Edit</span></th>
+                                </tr>
+                            </thead>
+                            <tbody className="bg-white divide-y divide-gray-200">
+                                {userExtractedData.map((row, index) => (
+                                    <tr key={row.id || index} className={index % 2 === 0 ? 'bg-white' : 'bg-gray-50'}>
+                                        <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">{editingRow === index ? (<input type="text" value={editedData['Batch ID'] || ''} onChange={(e) => handleInputChange(e, 'Batch ID')} className={`w-full p-2 border rounded-md ${editedData['Batch ID_error'] ? 'border-red-500' : 'border-gray-300'}`} />) : (<span className={row['Batch ID_error'] ? 'text-red-600 font-semibold' : ''}>{row['Batch ID'] || 'N/A'}</span>)}</td>
+                                        <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-700">{editingRow === index ? (<input type="text" value={editedData['Asset Name'] || ''} onChange={(e) => handleInputChange(e, 'Asset Name')} className={`w-full p-2 border rounded-md ${editedData['Asset Name_error'] ? 'border-red-500' : 'border-gray-300'}`} />) : (<span className={row['Asset Name_error'] ? 'text-red-600 font-semibold' : ''}>{row['Asset Name'] || 'N/A'}</span>)}</td>
+                                        <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-700">{editingRow === index ? (<input type="text" value={editedData['Batch Type'] || ''} onChange={(e) => handleInputChange(e, 'Batch Type')} className={`w-full p-2 border rounded-md ${editedData['Batch Type_error'] ? 'border-red-500' : 'border-gray-300'}`} />) : (<span className={row['Batch Type_error'] ? 'text-red-600 font-semibold' : ''}>{row['Batch Type'] || 'N/A'}</span>)}</td>
+                                        <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-700">{editingRow === index ? (<input type="number" value={editedData['Work Unit'] || ''} onChange={(e) => handleInputChange(e, 'Work Unit')} className={`w-full p-2 border rounded-md ${editedData['Work Unit_error'] ? 'border-red-500' : 'border-gray-300'}`} />) : (<span className={row['Work Unit_error'] ? 'text-red-600 font-semibold' : ''}>{row['Work Unit'] !== null ? row['Work Unit'] : 'N/A'}</span>)}</td>
+                                        <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-700">{editingRow === index ? (<input type="number" value={editedData['Pages of Single Batch'] || ''} onChange={(e) => handleInputChange(e, 'Pages of Single Batch')} className={`w-full p-2 border rounded-md ${editedData['Pages of Single Batch_error'] ? 'border-red-500' : 'border-gray-300'}`} />) : (<span className={row['Pages of Single Batch_error'] ? 'text-red-600 font-semibold' : ''}>{row['Pages of Single Batch'] !== null ? row['Pages of Single Batch'] : 'N/A'}</span>)}</td>
+                                        <td className="px-6 py-4 whitespace-nowrap text-right text-sm font-medium">{editingRow === index ? (<><button onClick={handleSaveEdit} className="text-green-600 hover:text-green-900 mr-2 p-1 rounded-full hover:bg-green-100 transition-colors"><Save className="h-5 w-5" /></button><button onClick={handleCancelEdit} className="text-gray-600 hover:text-gray-900 p-1 rounded-full hover:bg-gray-100 transition-colors"><XCircle className="h-5 w-5" /></button></>) : (<button onClick={() => handleEditClick(index)} className="text-blue-600 hover:text-blue-900 p-1 rounded-full hover:bg-blue-100 transition-colors"><Edit className="h-5 w-5" /></button>)}</td>
+                                    </tr>
+                                ))}
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            )}
+
+            { /* Confirmation Modal */ } {showModal && (
+                <div className="fixed inset-0 bg-gray-600 bg-opacity-50 flex items-center justify-center z-50">
+                    <div className="bg-white p-6 rounded-lg shadow-xl max-w-sm w-full">
+                        <h3 className="text-lg font-semibold mb-4">Confirmation</h3>
+                        <p className="mb-6">{modalContent}</p>
+                        <div className="flex justify-end gap-3">
+                            <button onClick={handleModalCancel} className="px-4 py-2 bg-gray-200 text-gray-700 rounded-md hover:bg-gray-300 transition-colors">Cancel</button>
+                            <button onClick={handleModalConfirm} className="px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700 transition-colors">Confirm</button>
+                        </div>
+                    </div>
+                </div>
+            )}
+        </div>
+    );
+};
+
+export default App;
