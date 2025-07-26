@@ -2,7 +2,13 @@ import React, { useState, useEffect, useRef } from 'react';
 import { initializeApp } from 'firebase/app';
 import { getAuth, signInAnonymously, signInWithCustomToken, onAuthStateChanged } from 'firebase/auth';
 import { getFirestore, doc, setDoc, collection, onSnapshot, query, orderBy, serverTimestamp } from 'firebase/firestore';
-import { Upload, FileText, XCircle, CheckCircle, Download, Loader2, Edit, Save, Trash2 } from 'lucide-react';
+import { Upload, FileText, XCircle, CheckCircle, Download, Loader2, Edit, Save, Trash2, FileWarning } from 'lucide-react';
+
+// Load pdf.js library dynamically
+// NOTE: pdf.js is a large library. In a production environment,
+// consider server-side PDF processing for better performance and smaller client-side bundles.
+const PDF_JS_URL = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.4.120/pdf.min.js';
+const PDF_WORKER_URL = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.4.120/pdf.worker.min.js';
 
 // Utility function to convert File to Base64
 const fileToBase64 = (file) => {
@@ -13,6 +19,45 @@ const fileToBase64 = (file) => {
         reader.onerror = (error) => reject(error);
     });
 };
+
+// Function to convert PDF page to image (Base64)
+const pdfPageToImageBase64 = async (pdfFile) => {
+    return new Promise(async (resolve, reject) => {
+        if (typeof window.pdfjsLib === 'undefined') {
+            console.error("pdf.js not loaded. Cannot process PDF.");
+            reject("pdf.js library not loaded.");
+            return;
+        }
+
+        const reader = new FileReader();
+        reader.onload = async (event) => {
+            const pdfData = new Uint8Array(event.target.result);
+            try {
+                const pdf = await window.pdfjsLib.getDocument({ data: pdfData }).promise;
+                const images = [];
+
+                for (let i = 1; i <= pdf.numPages; i++) {
+                    const page = await pdf.getPage(i);
+                    const viewport = page.getViewport({ scale: 2 }); // Scale for better resolution
+                    const canvas = document.createElement('canvas');
+                    const context = canvas.getContext('2d');
+                    canvas.height = viewport.height;
+                    canvas.width = viewport.width;
+
+                    await page.render({ canvasContext: context, viewport: viewport }).promise;
+                    images.push(canvas.toDataURL('image/png').split(',')[1]); // Get base64 data
+                }
+                resolve(images);
+            } catch (error) {
+                console.error("Error rendering PDF:", error);
+                reject("Failed to render PDF: " + error.message);
+            }
+        };
+        reader.onerror = (error) => reject(error);
+        reader.readAsArrayBuffer(pdfFile);
+    });
+};
+
 
 // Known batch types for validation/correction
 const KNOWN_BATCH_TYPES = [
@@ -93,6 +138,8 @@ const App = () => {
     const [showModal, setShowModal] = useState(false);
     const [modalContent, setModalContent] = useState('');
     const [modalAction, setModalAction] = useState(null);
+    const [isDragging, setIsDragging] = useState(false);
+    const [processingProgress, setProcessingProgress] = useState(0); // For progress indicator
 
     // Firestore state
     const [db, setDb] = useState(null);
@@ -100,7 +147,7 @@ const App = () => {
     const [userId, setUserId] = useState(null);
     const [userExtractedData, setUserExtractedData] = useState([]);
 
-    // Initialize Firebase
+    // Initialize Firebase and load pdf.js
     useEffect(() => {
         try {
             const firebaseConfig = JSON.parse(typeof __firebase_config !== 'undefined' ? __firebase_config : '{}');
@@ -134,7 +181,24 @@ const App = () => {
                 }
             });
 
-            return () => unsubscribeAuth();
+            // Load pdf.js
+            const script = document.createElement('script');
+            script.src = PDF_JS_URL;
+            script.onload = () => {
+                window.pdfjsLib.GlobalWorkerOptions.workerSrc = PDF_WORKER_URL;
+                console.log("pdf.js loaded successfully.");
+            };
+            script.onerror = (e) => {
+                console.error("Failed to load pdf.js:", e);
+                setError("Failed to load PDF processing library. PDF uploads may not work.");
+            };
+            document.body.appendChild(script);
+
+
+            return () => {
+                unsubscribeAuth();
+                document.body.removeChild(script); // Clean up script on unmount
+            };
         } catch (e) {
             console.error("Firebase Initialization Error:", e);
             setError("Failed to initialize Firebase. Check __firebase_config.");
@@ -146,7 +210,8 @@ const App = () => {
         if (db && userId) {
             const appId = typeof __app_id !== 'undefined' ? __app_id : 'default-app-id';
             const userDocRef = collection(db, `artifacts/${appId}/users/${userId}/extracted_ocr_data`);
-            const q = query(userDocRef, orderBy('timestamp', 'desc'));
+            // Order by timestamp in ascending order
+            const q = query(userDocRef, orderBy('timestamp', 'asc'));
 
             const unsubscribe = onSnapshot(q, (snapshot) => {
                 const data = snapshot.docs.map(doc => ({
@@ -167,7 +232,33 @@ const App = () => {
     const handleFileChange = (event) => {
         setError(null);
         const files = Array.from(event.target.files);
-        setSelectedFiles(prev => [...prev, ...files]);
+        addFiles(files);
+    };
+
+    const handleDragOver = (event) => {
+        event.preventDefault();
+        setIsDragging(true);
+    };
+
+    const handleDragLeave = () => {
+        setIsDragging(false);
+    };
+
+    const handleDrop = (event) => {
+        event.preventDefault();
+        setIsDragging(false);
+        setError(null);
+        const files = Array.from(event.dataTransfer.files);
+        addFiles(files);
+    };
+
+    const addFiles = (newFiles) => {
+        const acceptedTypes = ['image/png', 'image/jpeg', 'image/jpg', 'application/pdf'];
+        const validFiles = newFiles.filter(file => acceptedTypes.includes(file.type));
+        if (validFiles.length !== newFiles.length) {
+            setError("Some files were not accepted. Only PNG, JPG, JPEG, and PDF files are allowed.");
+        }
+        setSelectedFiles(prev => [...prev, ...validFiles]);
     };
 
     const handleRemoveFile = (indexToRemove) => {
@@ -175,17 +266,18 @@ const App = () => {
     };
 
     const processImageWithLLM = async (base64ImageData) => {
+        // Updated prompt to explicitly ask for Batch ID as numeric and Asset Name between underscores
         const prompt = `You are an expert OCR post-processor. Analyze the provided image, which contains a table with batch details. Your task is to extract the following information for each row: 'Batch ID', 'Asset Name', 'Batch Type', 'Work Unit', and 'Pages of Single Batch'.
-        For 'Batch ID', extract the full ID.
-        For 'Asset Name', extract the part of the Batch ID between hyphens (e.g., 'btita' from '173974-btita-97c2'). If no hyphenated part, infer from common names or leave null.
+        For 'Batch ID', extract only the initial numeric identifier (e.g., '173188' from '173188_britair_f759cf').
+        For 'Asset Name', extract the substring located between the first underscore (_) and the second underscore (_) in the original Batch ID string (e.g., 'britair' from '173188_britair_f759cf').
         For 'Batch Type', identify the type from the third column.
         For 'Work Unit' and 'Pages of Single Batch', extract the integer values from the last two columns.
         Return the data as a JSON array of objects, where each object represents a row. If a field cannot be confidently extracted, use null.
         Example JSON structure:
         [
             {
-                "Batch ID": "173974-btita-97c2",
-                "Asset Name": "btita",
+                "Batch ID": "173188",
+                "Asset Name": "britair",
                 "Batch Type": "Non-Incident Statement",
                 "Work Unit": 1,
                 "Pages of Single Batch": 1
@@ -269,31 +361,41 @@ const App = () => {
 
     const processExtractedData = (rawData) => {
         return rawData.map(row => {
-            const processedRow = { ...row
-            };
+            const processedRow = { ...row };
 
-            // 1. Batch ID Validation (Basic Regex)
-            const batchIdRegex = /^[0-9a-fA-F]{6}-[a-zA-Z0-9]+-[0-9a-fA-F]{4}$/;
-            if (processedRow['Batch ID'] && !batchIdRegex.test(processedRow['Batch ID'])) {
+            // 1. Batch ID Validation (should be numeric)
+            // Expecting LLM to provide only the numeric part for 'Batch ID'
+            const numericIdRegex = /^[0-9]+$/;
+            if (processedRow['Batch ID'] && !numericIdRegex.test(processedRow['Batch ID'])) {
                 processedRow['Batch ID_error'] = true;
+            } else if (!processedRow['Batch ID']) {
+                processedRow['Batch ID_error'] = true; // Missing
+            } else {
+                processedRow['Batch ID_error'] = false;
             }
 
-            // 2. Asset Name Extraction/Correction
-            if (processedRow['Batch ID']) {
-                const parts = processedRow['Batch ID'].split('-');
-                if (parts.length > 1) {
-                    let extractedAsset = parts[1].toLowerCase();
-                    // Simple dictionary-based correction for common OCR errors (e.g., britair vs btita)
-                    if (extractedAsset.includes('britair')) {
-                        extractedAsset = 'britair';
-                    } else if (extractedAsset.includes('btita')) {
-                        extractedAsset = 'btita';
-                    }
-                    processedRow['Asset Name'] = extractedAsset;
-                } else {
-                    processedRow['Asset Name'] = null; // Could not extract from Batch ID
+            // 2. Asset Name Validation (should be alphanumeric)
+            // Expecting LLM to provide the asset name directly
+            const assetNameRegex = /^[a-zA-Z0-9]+$/;
+            if (processedRow['Asset Name']) {
+                let extractedAsset = processedRow['Asset Name'].toLowerCase();
+                // Simple dictionary-based correction for common OCR errors (e.g., britair vs btita)
+                if (extractedAsset.includes('britair')) {
+                    extractedAsset = 'britair';
+                } else if (extractedAsset.includes('btita')) {
+                    extractedAsset = 'btita';
                 }
+                processedRow['Asset Name'] = extractedAsset;
+                if (!assetNameRegex.test(processedRow['Asset Name'])) {
+                     processedRow['Asset Name_error'] = true;
+                } else {
+                    processedRow['Asset Name_error'] = false;
+                }
+            } else {
+                processedRow['Asset Name'] = null; // Missing
+                processedRow['Asset Name_error'] = true;
             }
+
 
             // 3. Batch Type Fuzzy Match
             if (processedRow['Batch Type']) {
@@ -336,23 +438,64 @@ const App = () => {
         setLoading(true);
         setError(null);
         setExtractedData([]); // Clear previous results
+        setProcessingProgress(0);
 
         let allProcessedData = [];
+        let processedFileCount = 0; // Count of files processed (including PDF pages)
 
         for (const file of selectedFiles) {
-            try {
-                const base64 = await fileToBase64(file);
-                const rawLLMData = await processImageWithLLM(base64);
-                const processed = processExtractedData(rawLLMData);
-                allProcessedData = [...allProcessedData, ...processed];
-            } catch (err) {
-                console.error(`Error processing file ${file.name}:`, err);
-                setError(`Failed to process ${file.name}: ${err.message}`);
-                // Continue to next file even if one fails
+            let base64Images = [];
+            let currentFileName = file.name;
+
+            if (file.type === 'application/pdf') {
+                try {
+                    // PDF processing progress is handled internally by pdfPageToImageBase64
+                    const images = await pdfPageToImageBase64(file);
+                    base64Images = images;
+                    currentFileName = `${file.name} (Page %d)`; // For display
+                } catch (pdfError) {
+                    console.error(`Error processing PDF ${file.name}:`, pdfError);
+                    setError(`Failed to process PDF ${file.name}: ${pdfError.message}. Please ensure pdf.js is loaded and PDF is valid.`);
+                    processedFileCount++; // Still count as processed even if failed
+                    continue; // Skip to next file
+                }
+            } else {
+                try {
+                    const base64 = await fileToBase64(file);
+                    base64Images.push(base64);
+                } catch (imgError) {
+                    console.error(`Error converting image ${file.name}:`, imgError);
+                    setError(`Failed to convert image ${file.name}: ${imgError.message}`);
+                    processedFileCount++;
+                    continue; // Skip to next file
+                }
+            }
+
+            for (let i = 0; i < base64Images.length; i++) {
+                const base64 = base64Images[i];
+                const displayFileName = base64Images.length > 1 ? currentFileName.replace('%d', i + 1) : currentFileName;
+                try {
+                    const rawLLMData = await processImageWithLLM(base64);
+                    const processed = processExtractedData(rawLLMData);
+                    // Add original file info for traceability
+                    processed.forEach(item => {
+                        item.originalFileName = displayFileName;
+                        // No longer storing Batch_ID_original as LLM should return processed parts
+                    });
+                    allProcessedData = [...allProcessedData, ...processed];
+                } catch (err) {
+                    console.error(`Error extracting data from ${displayFileName}:`, err);
+                    setError(`Failed to extract data from ${displayFileName}: ${err.message}`);
+                } finally {
+                    // Update progress after each image/PDF page is attempted
+                    processedFileCount++;
+                    setProcessingProgress(Math.floor((processedFileCount / selectedFiles.length) * 100));
+                }
             }
         }
         setExtractedData(allProcessedData);
         setLoading(false);
+        setProcessingProgress(0); // Reset progress
 
         // Save to Firestore
         if (db && userId && allProcessedData.length > 0) {
@@ -360,8 +503,16 @@ const App = () => {
             const userDocRef = collection(db, `artifacts/${appId}/users/${userId}/extracted_ocr_data`);
             for (const dataRow of allProcessedData) {
                 try {
+                    // Ensure the data saved to Firestore is clean and doesn't include temporary error flags
+                    const dataToSave = { ...dataRow };
+                    delete dataToSave['Batch ID_error'];
+                    delete dataToSave['Asset Name_error'];
+                    delete dataToSave['Batch Type_error'];
+                    delete dataToSave['Work Unit_error'];
+                    delete dataToSave['Pages of Single Batch_error'];
+
                     await setDoc(doc(userDocRef), { // Use setDoc with a new doc ref to auto-generate ID
-                        ...dataRow,
+                        ...dataToSave,
                         timestamp: serverTimestamp()
                     });
                 } catch (e) {
@@ -374,21 +525,37 @@ const App = () => {
 
     const handleEditClick = (index) => {
         setEditingRow(index);
-        setEditedData({ ...extractedData[index]
-        });
+        setEditedData({ ...userExtractedData[index]
+        }); // Use userExtractedData for editing
     };
 
     const handleSaveEdit = () => {
-        const updatedData = [...extractedData];
-        updatedData[editingRow] = processExtractedData([editedData])[0]; // Re-process edited row for validation
-        setExtractedData(updatedData);
+        const updatedData = [...userExtractedData];
+        // Re-process edited data to apply validation and new extraction rules
+        // Note: When editing, the 'Batch ID' field in editedData will be the numeric part.
+        // If the user manually types the full string (e.g., "173188_britair_f759cf") into the Batch ID field
+        // during edit, this `processExtractedData` will correctly re-extract the numeric part for Batch ID
+        // and the asset name from it.
+        updatedData[editingRow] = processExtractedData([editedData])[0];
+        setUserExtractedData(updatedData); // Update the state that drives the table
         setEditingRow(null);
 
         // Update in Firestore
         if (db && userId && updatedData[editingRow] && updatedData[editingRow].id) {
             const appId = typeof __app_id !== 'undefined' ? __app_id : 'default-app-id';
             const docRef = doc(db, `artifacts/${appId}/users/${userId}/extracted_ocr_data`, updatedData[editingRow].id);
-            setDoc(docRef, { ...updatedData[editingRow],
+            // Ensure the data saved to Firestore is clean and doesn't include temporary error flags
+            const dataToSave = { ...updatedData[editingRow] };
+            delete dataToSave['Batch ID_error'];
+            delete dataToSave['Asset Name_error'];
+            delete dataToSave['Batch Type_error'];
+            delete dataToSave['Work Unit_error'];
+            delete dataToSave['Pages of Single Batch_error'];
+            delete dataToSave['originalFileName']; // Remove internal field
+            delete dataToSave['timestamp']; // Remove internal field
+            delete dataToSave['id']; // Remove internal field
+
+            setDoc(docRef, { ...dataToSave,
                 timestamp: serverTimestamp()
             }, {
                 merge: true
@@ -412,7 +579,7 @@ const App = () => {
     };
 
     const handleExport = (format) => {
-        if (extractedData.length === 0) {
+        if (userExtractedData.length === 0) {
             setModalContent("No data to export.");
             setModalAction(null);
             setShowModal(true);
@@ -420,7 +587,7 @@ const App = () => {
         }
 
         // Correctly destructure properties with spaces by quoting them
-        const dataToExport = extractedData.map((row) => {
+        const dataToExport = userExtractedData.map((row) => {
             const newRow = { ...row
             };
             delete newRow['Batch ID_error'];
@@ -428,6 +595,9 @@ const App = () => {
             delete newRow['Batch Type_error'];
             delete newRow['Work Unit_error'];
             delete newRow['Pages of Single Batch_error'];
+            delete newRow['originalFileName']; // Remove internal field
+            delete newRow['timestamp']; // Remove internal field
+            delete newRow['id']; // Remove internal field
             return newRow;
         });
 
@@ -508,11 +678,16 @@ const App = () => {
             <div className="bg-white p-6 rounded-xl shadow-lg w-full max-w-4xl mb-8">
                 <h2 className="text-2xl font-semibold text-gray-700 mb-4">Upload Documents</h2>
 
-                <div className="border-2 border-dashed border-gray-300 rounded-lg p-6 text-center cursor-pointer hover:border-blue-500 transition-all duration-200"
+                <div className={`border-2 border-dashed rounded-lg p-6 text-center cursor-pointer transition-all duration-200
+                             ${isDragging ? 'border-blue-500 bg-blue-50' : 'border-gray-300 hover:border-blue-500'}`}
+                    onDragOver={handleDragOver}
+                    onDragLeave={handleDragLeave}
+                    onDrop={handleDrop}
                     onClick={() => document.getElementById('fileInput').click()}>
                     <Upload className="mx-auto h-12 w-12 text-gray-400 mb-3" />
-                    <p className="text-gray-600 font-medium">Drag & drop images here, or click to browse</p>
-                    <input type="file" id="fileInput" className="hidden" multiple accept="image/*" onChange={handleFileChange} />
+                    <p className="text-gray-600 font-medium">Drag & drop images or PDFs here, or click to browse</p>
+                    <p className="text-sm text-gray-500 mt-1">Supported formats: PNG, JPG, JPEG, PDF</p>
+                    <input type="file" id="fileInput" className="hidden" multiple accept="image/*,application/pdf" onChange={handleFileChange} />
                 </div>
 
                 {selectedFiles.length > 0 && (
@@ -522,7 +697,7 @@ const App = () => {
                             {selectedFiles.map((file, index) => (
                                 <div key={index} className="relative bg-gray-50 p-3 rounded-lg shadow-sm flex items-center justify-between">
                                     <div className="flex items-center">
-                                        <FileText className="h-5 w-5 text-blue-500 mr-2" />
+                                        {file.type.startsWith('image/') ? <FileText className="h-5 w-5 text-blue-500 mr-2" /> : <FileWarning className="h-5 w-5 text-red-500 mr-2" />}
                                         <span className="text-sm text-gray-700 truncate">{file.name}</span>
                                     </div>
                                     <button onClick={() => handleRemoveFile(index)}
@@ -536,7 +711,7 @@ const App = () => {
                             className="mt-6 w-full bg-blue-600 text-white py-3 px-6 rounded-lg font-semibold text-lg hover:bg-blue-700 transition-colors duration-300 flex items-center justify-center disabled:opacity-50 disabled:cursor-not-allowed shadow-md">
                             {loading ? (
                                 <>
-                                    <Loader2 className="animate-spin mr-3" /> Processing...
+                                    <Loader2 className="animate-spin mr-3" /> Processing ({processingProgress}%)...
                                 </>
                             ) : (
                                 <>
@@ -574,6 +749,7 @@ const App = () => {
                         <table className="min-w-full divide-y divide-gray-200">
                             <thead className="bg-gray-50">
                                 <tr>
+                                    <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Original File</th>
                                     <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Batch ID</th>
                                     <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Asset Name</th>
                                     <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Batch Type</th>
@@ -585,6 +761,7 @@ const App = () => {
                             <tbody className="bg-white divide-y divide-gray-200">
                                 {userExtractedData.map((row, index) => (
                                     <tr key={row.id || index} className={index % 2 === 0 ? 'bg-white' : 'bg-gray-50'}>
+                                        <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-700">{row.originalFileName || 'N/A'}</td>
                                         <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">{editingRow === index ? (<input type="text" value={editedData['Batch ID'] || ''} onChange={(e) => handleInputChange(e, 'Batch ID')} className={`w-full p-2 border rounded-md ${editedData['Batch ID_error'] ? 'border-red-500' : 'border-gray-300'}`} />) : (<span className={row['Batch ID_error'] ? 'text-red-600 font-semibold' : ''}>{row['Batch ID'] || 'N/A'}</span>)}</td>
                                         <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-700">{editingRow === index ? (<input type="text" value={editedData['Asset Name'] || ''} onChange={(e) => handleInputChange(e, 'Asset Name')} className={`w-full p-2 border rounded-md ${editedData['Asset Name_error'] ? 'border-red-500' : 'border-gray-300'}`} />) : (<span className={row['Asset Name_error'] ? 'text-red-600 font-semibold' : ''}>{row['Asset Name'] || 'N/A'}</span>)}</td>
                                         <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-700">{editingRow === index ? (<input type="text" value={editedData['Batch Type'] || ''} onChange={(e) => handleInputChange(e, 'Batch Type')} className={`w-full p-2 border rounded-md ${editedData['Batch Type_error'] ? 'border-red-500' : 'border-gray-300'}`} />) : (<span className={row['Batch Type_error'] ? 'text-red-600 font-semibold' : ''}>{row['Batch Type'] || 'N/A'}</span>)}</td>
